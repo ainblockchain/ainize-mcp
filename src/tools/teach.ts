@@ -161,7 +161,8 @@ async function describeBases(ctx: Context, ids: string[]): Promise<{ id: string;
   const out = [];
   for (const id of ids) {
     try {
-      const e = await ctx.client.request<RawEntry & { has_body?: boolean; anchor: { dataset?: { access?: string } } }>(`/api/patches/${encodeURIComponent(id)}`);
+      // a base is very often this key's own private draft, which is 404 to an anonymous read
+      const e = await ctx.client.request<RawEntry & { has_body?: boolean; anchor: { dataset?: { access?: string } } }>(`/api/patches/${encodeURIComponent(id)}`, { auth: 'caller' });
       const status = e.status;
       const problem = ['REJECTED', 'CHALLENGED'].includes(status)
         ? `this knowledge is ${status} — the node refuses it as a base`

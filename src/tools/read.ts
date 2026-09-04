@@ -13,10 +13,15 @@ import { tool, type ToolDef } from './types.js';
 
 const idArg = z.string().min(1).max(128).describe('the knowledge id, e.g. "krx-all-2761"');
 
-/** A DRAFT is 404 to anyone but its owner — deliberately, so a non-owner learns nothing from the error shape. */
+/**
+ * A DRAFT is 404 to anyone but its owner — deliberately, so a non-owner learns nothing from the error shape. Which
+ * makes `auth: 'caller'` load-bearing rather than optional: the lesson this session just taught IS a private draft,
+ * `teach` hands its `draft_id` straight to the agent, and reading it anonymously made this server 404 on its own
+ * work while holding the very credential that identifies it.
+ */
 const entryOf = async (ctx: Context, id: string): Promise<RawEntry & Record<string, unknown>> => {
   try {
-    return await ctx.client.request<RawEntry & Record<string, unknown>>(`/api/patches/${encodeURIComponent(id)}`);
+    return await ctx.client.request<RawEntry & Record<string, unknown>>(`/api/patches/${encodeURIComponent(id)}`, { auth: 'caller' });
   } catch (e) {
     if (e instanceof UpstreamError && e.status === 404) throw fail('not_found', `no knowledge with id ${echoId(id)} on ${ctx.client.url} (a private draft is invisible to anyone but its owner). Try search_knowledge.`);
     throw e;
@@ -77,8 +82,8 @@ export function readTools(ctx: Context): ToolDef[] {
       const inc = new Set(a.include ?? []);
       const id = encodeURIComponent(a.id);
       const [records, events, siblings] = await Promise.all([
-        inc.has('records') ? ctx.client.request<{ records: unknown[] }>(`/api/patches/${id}/records`).catch(() => ({ records: [] })) : null,
-        inc.has('events') ? ctx.client.request<{ events: unknown[] }>(`/api/patches/${id}/events?limit=50`).catch(() => ({ events: [] })) : null,
+        inc.has('records') ? ctx.client.request<{ records: unknown[] }>(`/api/patches/${id}/records`, { auth: 'caller' }).catch(() => ({ records: [] })) : null,
+        inc.has('events') ? ctx.client.request<{ events: unknown[] }>(`/api/patches/${id}/events?limit=50`, { auth: 'caller' }).catch(() => ({ events: [] })) : null,
         inc.has('siblings') ? ctx.client.request<{ items: RawEntry[] }>(`/api/benchmarks/${encodeURIComponent(e.anchor.benchmark.schema)}`).catch(() => ({ items: [] })) : null,
       ]);
       const requires = (e.requires as { id: string; name: string; held: boolean; price: string | null }[] | undefined) ?? [];

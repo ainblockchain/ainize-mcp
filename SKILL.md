@@ -98,15 +98,18 @@ name it, never silently retarget to it. If `requires[]` is non-empty the knowled
 ### 2. Prove a knowledge works
 
 ```
-live_test { question: "…", knowledge: [] }              → job_id   (the bare model)
-job_status { job_id, wait_ms: 30000 }
-live_test { question: "…", knowledge: ["krx-all-2761"] } → job_id  (or one call in compare mode, which does both)
-job_status { job_id, wait_ms: 60000 }
+live_test { question: "…", knowledge: ["krx-all-2761"] } → job_id   (ONE call: it answers both columns)
+job_status { job_id, wait_ms: 60000 }                    → before, after, changed, verdict, caveats
 ```
 
-`mode: "compare"` (the default) answers both columns in one job. Report **both answers verbatim**, the verifiers and
-the score. If `verdict` is `null`, say the comparison is unscored — it is a comparison, not a verified result. If
-`model_lock.sentence` says another node holds the model, report that sentence and wait; do not retry in a loop.
+**One call, not two.** `mode: "compare"` (the default) takes the shared model lock once and answers both columns
+itself, so nothing can move between them. A separate `knowledge: []` call is *not* a bare model: it has nothing to
+unload, so a knowledge another process left on the shared model answers along with the "base" — the answer says so
+in `caveats`, and so does a comparison whose knowledge was found already loaded.
+
+Report **both answers verbatim**, the verifiers and the score, and every line of `caveats`. If `verdict` is `null`,
+say the comparison is unscored — it is a comparison, not a verified result. If `model_lock.sentence` says another
+node holds the model, report that sentence and wait; do not retry in a loop.
 
 ### 3. Buy knowledge within a budget
 
@@ -190,7 +193,7 @@ is on the shared AIN chain; a local-ledger node such as `:3422` is the place to 
 | Code | What to do |
 |---|---|
 | `model_busy` | the message names the holder and how long; report it, retry after ~30 s, never in a tight loop |
-| `quota_chat` | free live tests are 20/hour per visitor IP and **shared by everyone on this server**; `retry_after_ms` says when they return |
+| `quota_chat` | free live tests are 20/hour per visitor IP and **shared by everyone on this server**; `retry_after_ms` says when they return. A server configured with `AINIZE_OPERATOR_PASSWORD` is not metered at all (`quota.metered: false`) — a node does not charge its own operator |
 | `quota_key` / `quota_ip` | the daily lessons are spent; nothing you can retry today |
 | `quote_required` / `quote_expired` / `quote_mismatch` | quote again and show the human the new number; never guess a total |
 | `budget_exceeded` / `per_purchase_cap_exceeded` | report the four numbers; only the server's own env can raise a cap |

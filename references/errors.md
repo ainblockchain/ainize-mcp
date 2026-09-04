@@ -52,7 +52,9 @@ Two of them are worth special handling:
 
 - **`quota_chat`** — free live tests are 20/hour per visitor IP and the bucket is **shared by everyone behind this
   MCP server**. `details.resets_at` / `resets_in_s` come from the node's own `quota_reset`, so say *when* they come
-  back.
+  back. A server configured with `AINIZE_OPERATOR_PASSWORD` (or `AINIZE_TOKEN`) does not hit this at all: it signs
+  its live tests in as the node's operator, a node does not charge its own operator a trial quota, and every answer
+  says which of the two it is (`quota.metered`).
 - **`invalid_signature`** — teaching-key signatures are request-bound and **single-use**; the node's replay cache
   refuses a second verification of the same header. A retry that replays a request looks exactly like a wrong key.
   This server signs per attempt and never follows redirects.

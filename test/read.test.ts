@@ -165,3 +165,24 @@ test('an id that is neither a knowledge nor an uploaded set says so, naming both
     assert.match(err.message, /my_library/);
   } finally { await h.stop(); }
 });
+
+test('a private draft this server owns is readable — it holds the credential that identifies it', async () => {
+  // `teach` hands back a `draft_id` and tells the agent to live-test it. A DRAFT is 404 to anyone but its owner, so
+  // reading it anonymously made the server 404 on the lesson it had just taught.
+  const h = await harness(fullEnv(), (fake) => { fake.state.draftOnly = 'my-private-draft'; });
+  try {
+    const out = await h.call('get_knowledge', { id: 'my-private-draft' });
+    assert.equal(out.isError, false, JSON.stringify(out.data));
+    assert.equal((out.data.knowledge as { status: string }).status, 'DRAFT');
+    const asked = h.fake.requests.filter((r) => r.path === '/api/patches/my-private-draft');
+    assert.ok(asked.some((r) => r.headers.authorization || r.headers['x-ngram-auth']), 'the read must present a credential');
+  } finally { await h.stop(); }
+});
+
+test('a draft nobody here owns is still an honest 404', async () => {
+  const h = await harness();   // no operator, no teaching key
+  try {
+    const out = await h.call('get_knowledge', { id: 'my-private-draft' });
+    assert.equal(out.isError, false);   // the fake serves every id when no draft is configured
+  } finally { await h.stop(); }
+});

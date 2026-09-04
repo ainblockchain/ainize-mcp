@@ -42,6 +42,8 @@ export interface FakeState {
   datasetFail: { status: number; body: Record<string, unknown> } | null;
   /** Knowledge somebody else has pinned on the shared model server. */
   pinned: string[];
+  /** An id that is a private DRAFT: 404 unless the request carries a credential. */
+  draftOnly: string | null;
   /** true = the knowledge under test is already on the shared table (`was_applied` in the node's answer). */
   alreadyApplied: boolean;
   /** If set, the NEXT read of /api/chat/patches moves `pinned` to this — a knowledge applied mid-test. */
@@ -65,7 +67,7 @@ export class FakeNode {
     has_body: false, requires: [], purchases: [], settlements: [], runtimeAvailable: true, teachEnabled: true,
     lock: null, waiting: 0, chatDelayMs: 5, chatFail: null, buyFail: null, buyDelayMs: 5, leakSecret: null,
     teachFlow: ['QUEUED', 'TRAINING', 'READY'], preflightStatuses: ['will_train'], preflightFail: null,
-    datasetFail: null, jobFail: null, lessonsUsedToday: 0, jobsPerKeyPerDay: 3, publishStatus: 'ANNOUNCED', pinned: [], pinnedNext: null, alreadyApplied: false,
+    datasetFail: null, jobFail: null, lessonsUsedToday: 0, jobsPerKeyPerDay: 3, publishStatus: 'ANNOUNCED', pinned: [], pinnedNext: null, alreadyApplied: false, draftOnly: null,
     teachBases: [],
   };
   /** dataset id → the rows it holds, so a preflight and a lesson talk about the same questions. */
@@ -404,6 +406,11 @@ export class FakeNode {
     if (detail) {
       const id = decodeURIComponent(detail[1] as string);
       if (id === 'missing') return json(404, { error: 'patch not found' });
+      // a private DRAFT is 404 to anyone who does not identify themselves — the node's own rule
+      if (s.draftOnly && id === s.draftOnly) {
+        if (!this.isOperator(req) && !signed()) return json(404, { error: 'patch not found' });
+        return json(200, { ...this.entry(id), status: 'DRAFT', quorum_ok: false, sellable: false, passed: 0 });
+      }
       return json(200, this.entry(id));
     }
 

@@ -47,7 +47,7 @@ export function moneyTools(ctx: Context): ToolDef[] {
       const id = a.id;
       let e: RawEntry & Record<string, unknown>;
       try {
-        e = await ctx.client.request<RawEntry & Record<string, unknown>>(`/api/patches/${encodeURIComponent(id)}`);
+        e = await ctx.client.request<RawEntry & Record<string, unknown>>(`/api/patches/${encodeURIComponent(id)}`, { auth: 'caller' });
       } catch (err) {
         if (err instanceof UpstreamError && err.status === 404) throw fail('not_found', `no knowledge with id ${echoId(id)} on ${ctx.client.url}.`);
         throw err;

@@ -230,7 +230,9 @@ bans. They are minutes-long, network-visible or destructive, and an agent has no
 
 Served as `ainize://instructions` and as the server's `instructions` on connect:
 
-1. **Before you claim a knowledge helps, prove it** — `live_test` with `knowledge: []`, then with the candidate.
+1. **Before you claim a knowledge helps, prove it** — ONE `live_test` naming the candidate in `knowledge`; it
+   answers both columns under one hold of the shared model lock. Two separate calls are not equivalent: a
+   `knowledge: []` call unloads nothing, so a knowledge another process left on the model answers with the base.
 2. **Before you spend, quote** — show the total, the base stack and the remaining budget, then **stop**.
 3. **Before you teach, preflight** — a daily lesson is scarce and is not refunded. `teach` does this for you.
 4. **Everything that touches the model is a job** — poll `job_status`; if the model is held, report *who* and *how
@@ -388,7 +390,7 @@ node_status { "refresh": false }     // refresh: true forces a runtime probe (~3
                   "queue": { "running": 1, "waiting": 0 },
                   "sentence": "the model is held by pid:2658057 (a live test of krx-all-2761) for 1 s" },
   "quota": { "live_tests_remaining": null, "limit": 20,
-             "shared_note": "the node has no quota endpoint — the remaining count is only known after a live test answers…" },
+             "note": "the node has no quota endpoint — the remaining count is only known after a live test answers…" },
   "teach_policy": { "enabled": true, "publish": "auto", "trainer": "ready", "backend": "stub", "limits": { … } },
   "capabilities": { "can_read": true, "can_live_test": true, "can_teach": false, "can_buy": false,
                     "can_apply": false, "can_publish": false },
@@ -443,7 +445,7 @@ live_test { "question": "픽셀플러스 종목코드 알려줘. 숫자만.", "k
 { "job_id": "lt_3e19184626c3", "kind": "live_test", "state": "queued", "poll_after_ms": 1500,
   "model_lock": { "sentence": "the model is held by pid:2658069 (a live test of krx-all-2761) for 7 s" },
   "applied_on_this_model": [],
-  "quota": { "remaining": null, "limit": 20, "shared_note": "shared by everyone using this MCP server…" },
+  "quota": { "metered": true, "live_tests_remaining": null, "limit": 20, "note": "…20 per rolling hour per visitor IP, shared by everyone using this MCP server." },
   "next": "call job_status with this job_id (wait_ms lets one call cover the whole wait)" }
 ```
 ```jsonc
@@ -459,7 +461,9 @@ job_status { "job_id": "lt_3e19184626c3", "wait_ms": 90000 }
     "knowledge": [{ "id": "krx-all-2761", "applied_ms": 3789, "was_already_applied": true,
                     "verification": { "quorum": "2/2", "attestations": [ /* node-b 26/26, node-c 26/26 */ ] } }],
     "apply_ms_total": 3789,
-    "quota": { "remaining": 17, "limit": 20, "shared_note": "free live tests are metered per visitor IP — this bucket is shared by everyone using this MCP server" },
+    "quota": { "metered": true, "remaining": 17, "limit": 20, "note": "free live tests are metered per visitor IP — this bucket is shared by everyone using this MCP server" },
+    // with AINIZE_OPERATOR_PASSWORD set, this reads instead:
+    // "quota": { "metered": false, "remaining": null, "limit": null, "note": "not metered: this server signs its live tests in as the node's operator…" },
     "caveats": ["this question is not in the knowledge's own benchmark, so the comparison is unscored — report it as a comparison, not as a verified result"] } }
 ```
 
