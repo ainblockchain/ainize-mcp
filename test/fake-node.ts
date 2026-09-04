@@ -40,6 +40,10 @@ export interface FakeState {
   preflightStatuses: ('will_train' | 'already_known' | 'overlaps_listing' | 'invalid')[];
   preflightFail: { status: number; body: Record<string, unknown> } | null;
   datasetFail: { status: number; body: Record<string, unknown> } | null;
+  /** Knowledge somebody else has pinned on the shared model server. */
+  pinned: string[];
+  /** If set, the NEXT read of /api/chat/patches moves `pinned` to this — a knowledge applied mid-test. */
+  pinnedNext: string[] | null;
   jobFail: { status: number; body: Record<string, unknown> } | null;
   /** Lessons this key has already created today, as `GET /api/teach/jobs` would report them. */
   lessonsUsedToday: number;
@@ -59,7 +63,7 @@ export class FakeNode {
     has_body: false, requires: [], purchases: [], settlements: [], runtimeAvailable: true, teachEnabled: true,
     lock: null, waiting: 0, chatDelayMs: 5, chatFail: null, buyFail: null, buyDelayMs: 5, leakSecret: null,
     teachFlow: ['QUEUED', 'TRAINING', 'READY'], preflightStatuses: ['will_train'], preflightFail: null,
-    datasetFail: null, jobFail: null, lessonsUsedToday: 0, jobsPerKeyPerDay: 3, publishStatus: 'ANNOUNCED',
+    datasetFail: null, jobFail: null, lessonsUsedToday: 0, jobsPerKeyPerDay: 3, publishStatus: 'ANNOUNCED', pinned: [], pinnedNext: null,
     teachBases: [],
   };
   /** dataset id → the rows it holds, so a preflight and a lesson talk about the same questions. */
@@ -186,7 +190,11 @@ export class FakeNode {
     if (pathname.startsWith('/api/teacher/')) return json(200, { address: idOf('/api/teacher/'), name: 'a teacher', lessons: [], earnings: { total: '0', currency: s.currency } });
 
     if (pathname === '/api/chat/patches') {
-      return json(200, { items: [], runtime: { available: s.runtimeAvailable, model: 'Qwen3.8-Flash-Next', hook: true }, lock: s.lock, now: Date.now(), queue: { running: s.lock ? 1 : null, waiting: s.waiting }, applied: [], overlaps: [] });
+      // `pinned` is what somebody else has left on the shared model; `pinnedNext` lets a test move it BETWEEN the
+      // handle and the answer, which is what actually happens when another node applies a knowledge mid-test.
+      const applied = s.pinned;
+      if (s.pinnedNext) { s.pinned = s.pinnedNext; s.pinnedNext = null; }
+      return json(200, { items: [], runtime: { available: s.runtimeAvailable, model: 'Qwen3.8-Flash-Next', hook: true }, lock: s.lock, now: Date.now(), queue: { running: s.lock ? 1 : null, waiting: s.waiting }, applied, overlaps: [] });
     }
     if (pathname === '/api/runtime') return json(200, { available: s.runtimeAvailable, model: 'Qwen3.8-Flash-Next', hook: true, applied: [] });
     if (pathname === '/api/chat/status') {

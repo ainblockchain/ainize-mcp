@@ -35,6 +35,8 @@ interface LiveTestPayload {
   chat: ChatResult;
   verifiers: Record<string, ReturnType<typeof verification>>;
   applied_before: string[];
+  /** What was pinned on the shared model when the answer came back — not the same thing as `applied_before`. */
+  applied_after: string[];
   elapsed_ms: number;
 }
 
@@ -45,6 +47,16 @@ function liveTestView(p: LiveTestPayload) {
   const caveats: string[] = [];
   if (p.applied_before.length) {
     caveats.push(`the "before" column is not a bare model: ${p.applied_before.join(', ')} ${p.applied_before.length === 1 ? 'is' : 'are'} pinned on this shared model server`);
+  }
+  // The model is shared across every node on the machine, and a test can wait minutes on its lock. Somebody else
+  // pinning or unpinning a knowledge WHILE this test ran changes what "before" meant, silently — so the pinned set
+  // is read again after the answer and any difference is said out loud rather than being averaged into a claim.
+  const moved = [
+    ...p.applied_after.filter((id) => !p.applied_before.includes(id)).map((id) => `+${id}`),
+    ...p.applied_before.filter((id) => !p.applied_after.includes(id)).map((id) => `-${id}`),
+  ];
+  if (moved.length) {
+    caveats.push(`the shared model changed WHILE this test ran (${moved.join(', ')}): another node pinned or unpinned a knowledge, so the two columns were not answered by the same base model. Run it again when the model is quiet before reporting this as proof.`);
   }
   if (p.chat.benchmark_hit === null && p.knowledge.length) {
     caveats.push('this question is not in the knowledge\'s own benchmark, so the comparison is unscored — report it as a comparison, not as a verified result');
@@ -63,6 +75,7 @@ function liveTestView(p: LiveTestPayload) {
       verification: p.verifiers[a.patch_id] ?? null,
     })),
     model: p.chat.model,
+    pinned_on_the_shared_model: { when_it_started: p.applied_before, when_it_answered: p.applied_after },
     apply_ms_total: p.chat.applied_ms,
     elapsed_ms: p.elapsed_ms,
     quota: { remaining: p.chat.remaining_quota, limit: p.chat.quota_limit,
@@ -116,7 +129,9 @@ export function liveTools(ctx: Context): ToolDef[] {
               const e = await ctx.client.request<RawEntry>(`/api/patches/${encodeURIComponent(id)}`).catch(() => null);
               if (e) verifiers[id] = verification(e);
             }
-            const payload: LiveTestPayload = { question: a.question, knowledge: a.knowledge, mode: a.mode ?? 'compare', chat, verifiers, applied_before: appliedBefore, elapsed_ms: Date.now() - started };
+            // read AFTER the answer: `/api/chat` restores what it applied, so a difference here is somebody else's doing
+            const settled = await ctx.client.request<{ applied?: string[] }>('/api/chat/patches').catch(() => ({ applied: appliedBefore }));
+            const payload: LiveTestPayload = { question: a.question, knowledge: a.knowledge, mode: a.mode ?? 'compare', chat, verifiers, applied_before: appliedBefore, applied_after: settled.applied ?? appliedBefore, elapsed_ms: Date.now() - started };
             return payload;
           },
         });

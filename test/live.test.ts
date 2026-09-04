@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fullEnv, harness } from './harness.js';
+import { fullEnv, harness, pollUntilFinished } from './harness.js';
 
 test('live_test hands back a job handle in milliseconds while the model call is still in flight', async (t) => {
   const h = await harness();
@@ -116,4 +116,28 @@ test('apply/remove are off unless the operator opted in, and remove needs confir
   assert.match(String(ok.data.warning), /every node on this machine shares/);
   const done = await h.call('job_status', { job_id: ok.data.job_id as string, wait_ms: 3000 });
   assert.equal(done.data.state, 'done');
+});
+
+test('a knowledge pinned by somebody else WHILE the test runs is called out, not averaged into the claim', async () => {
+  const h = await harness(fullEnv(), (fake) => { fake.state.pinned = []; fake.state.pinnedNext = ['someone-elses-krx']; });
+  try {
+    const started = await h.call('live_test', { question: '픽셀플러스 종목코드?', knowledge: ['k1'] });
+    assert.equal(started.isError, false, JSON.stringify(started.data));
+    const done = await pollUntilFinished(h, String(started.data.job_id));
+    const r = done.data.result as { caveats: string[]; pinned_on_the_shared_model: { when_it_started: string[]; when_it_answered: string[] } };
+    assert.deepEqual(r.pinned_on_the_shared_model.when_it_started, []);
+    assert.deepEqual(r.pinned_on_the_shared_model.when_it_answered, ['someone-elses-krx']);
+    assert.ok(r.caveats.some((c) => /changed WHILE this test ran/.test(c)), JSON.stringify(r.caveats));
+    assert.ok(r.caveats.some((c) => c.includes('+someone-elses-krx')), JSON.stringify(r.caveats));
+  } finally { await h.stop(); }
+});
+
+test('a quiet shared model earns no such caveat', async () => {
+  const h = await harness(fullEnv());
+  try {
+    const started = await h.call('live_test', { question: '픽셀플러스 종목코드?', knowledge: ['k1'] });
+    const done = await pollUntilFinished(h, String(started.data.job_id));
+    const r = done.data.result as { caveats: string[] };
+    assert.ok(!r.caveats.some((c) => /changed WHILE/.test(c)), JSON.stringify(r.caveats));
+  } finally { await h.stop(); }
 });
