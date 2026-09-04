@@ -5,6 +5,8 @@
  * Capabilities are derived once at startup from the node's own answers, and a tool whose capability is false is not
  * registered at all — the model never sees an affordance it cannot use.
  */
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import type { McpConfig } from './config.js';
 import { publicSummary, secretsOf } from './config.js';
 import { AinizeClient } from './client.js';
@@ -46,6 +48,12 @@ export class Context {
   readonly secrets: string[];
   /** The node's free-live-test bucket as last seen on a real answer — there is no quota endpoint to ask. */
   quota: QuotaObservation | null = null;
+  /**
+   * Daily lessons this session has spent. A lesson is scarce the way money is scarce — the node charges one at
+   * submit time and never refunds it — so it is capped per session by server configuration, exactly like the
+   * spending budget, and no tool argument can raise it (design §6.7).
+   */
+  lessonsSpent = 0;
   private info: NodeInfoView | null = null;
   private caps: Capabilities = { can_read: true, can_live_test: false, can_teach: false, can_buy: false, can_apply: false, can_publish: false };
 
@@ -131,6 +139,15 @@ export class Context {
   observeQuota(remaining: number | null, limit: number | null): void {
     this.quota = { remaining, limit, observed_at: Date.now() };
   }
+
+  /** Where `download_lesson` puts files: the configured directory, else under the state dir, else the temp dir. */
+  get downloadDir(): string {
+    if (this.cfg.downloadDir) return resolve(this.cfg.downloadDir);
+    if (this.cfg.stateDir) return join(resolve(this.cfg.stateDir), 'lessons');
+    return join(tmpdir(), 'ainize-mcp', 'lessons');
+  }
+
+  get maxDownloadBytes(): number { return this.cfg.maxDownloadBytes; }
 
   configSummary(): Record<string, unknown> { return publicSummary(this.cfg); }
 }

@@ -13,6 +13,7 @@ import { scrub } from './scrub.js';
 import { readTools } from './tools/read.js';
 import { liveTools } from './tools/live.js';
 import { moneyTools } from './tools/money.js';
+import { teachTools } from './tools/teach.js';
 import type { ToolDef, ToolExtra } from './tools/types.js';
 
 export const SERVER_NAME = 'ainize';
@@ -36,18 +37,23 @@ export function instructionsText(ctx: Context): string {
     '2. Before you spend, QUOTE. `buy` cannot be called without a `quote_id` and the total restated exactly. Show the',
     '   human the total, the base stack and the remaining session budget, and STOP. Never buy in the same turn you',
     '   first learned the price.',
-    '3. Everything that touches the model is a JOB. Call the tool, get a `job_id`, poll `job_status`. If the model is',
+    '3. Before you teach, PREFLIGHT. A daily lesson is scarce and is not refunded — the node charges one the moment a',
+    '   lesson is submitted, whatever happens next. If the model already answers the questions, say so and do not',
+    '   submit. `teach` does this for you and refuses with `nothing_to_train`; do not work around it.',
+    '4. Everything that touches the model is a JOB. Call the tool, get a `job_id`, poll `job_status`. If the model is',
     '   held by another node, `job_status` says who and for how long — report that instead of retrying in a loop.',
-    '4. Never print or pass along a session token, teaching key, password or signature. This server holds them; you',
+    '5. Never print or pass along a session token, teaching key, password or signature. This server holds them; you',
     '   have no access and no need. No tool takes one.',
-    '5. Never background-poll a human decision. The turn that shows a price and asks for approval ENDS.',
-    '6. When something is not implemented, say so. Family-tree edge kinds, per-knowledge signals, bundle buys and',
+    '6. Never background-poll a human decision. The turn that shows a price and asks for approval ENDS.',
+    '7. When something is not implemented, say so. Family-tree edge kinds, per-knowledge signals, bundle buys and',
     '   merge are not built yet: the tools return `null` and a note. Report the note; do not invent the number.',
-    '7. A vague request is a question, not a guess. If the price, the base or the knowledge is unspecified, ask.',
+    '8. A vague request is a question, not a guess. If the price, the base or the knowledge is unspecified, ask.',
     '',
     'TIERS: read freely (search_knowledge, get_knowledge, family_tree, get_training_set, node_status, my_library,',
-    'knowledge_signals, teacher_profile, quote, job_status). Echo back exactly what will happen and wait for the',
-    'human before anything that spends or mutates (buy, apply_knowledge, remove_knowledge).',
+    'knowledge_signals, teacher_profile, quote, job_status, job_list). Echo back exactly what will happen and wait',
+    'for the human before anything that spends or mutates (buy, teach, apply_knowledge, remove_knowledge,',
+    'publish_knowledge). Two of those cannot be undone: `buy` moves real money, and `publish_knowledge` writes a',
+    'record on the ledger that nobody can recall.',
     '',
     `THIS SERVER: node ${ctx.cfg.nodeUrl}. Capabilities that are OFF right now:`,
     ...(off.length ? off : ['- (none: everything configured is available)']),
@@ -84,7 +90,7 @@ export async function callTool(ctx: Context, def: ToolDef, args: Record<string, 
 }
 
 export function allTools(ctx: Context): ToolDef[] {
-  return [...readTools(ctx), ...liveTools(ctx), ...moneyTools(ctx)];
+  return [...readTools(ctx), ...liveTools(ctx), ...teachTools(ctx), ...moneyTools(ctx)];
 }
 
 /** Build one `McpServer` for one client session. Capabilities are already resolved on `ctx`. */

@@ -1,17 +1,24 @@
-# `@ngram/mcp` — Ainize as an MCP server
+# `@ngram/mcp` — Ainize as an MCP server, and as an MCP client
 
 `ainize-mcp` puts the Ainize knowledge marketplace behind the Model Context Protocol, so Claude Code, Cursor and any
-other MCP client can do the four things the product exists for:
+other MCP client can do the five things the product exists for:
 
 - **find** knowledge — trained memory-table patches a node applies into a running LLM;
 - **prove** it — the same question answered twice, by the bare model and by the model with the knowledge loaded,
   together with who verified it and with what score. This is the signature capability and the hardest thing to fake;
 - **price** it honestly — a quote that includes the base stack a delta child needs, and a session budget the model
   cannot raise;
-- **buy** it over x402 — quote → explicit confirm → settle, journalled so a retry can never pay twice.
+- **buy** it over x402 — quote → explicit confirm → settle, journalled so a retry can never pay twice;
+- **teach** it something permanently — questions and answers become a knowledge, optionally *on top of* an existing
+  one, and the result says what the model learned and what it did not.
 
-The design this implements is `docs/mcp-integration-design.md`. Direction **B** (Ainize as an MCP *client*, pulling
-rows from The Graph's Subgraph MCP into a teaching dataset) lives in `graph/` and is not part of this package yet.
+It is also an MCP **client**: `McpDataSource` connects to somebody else's MCP server, runs a query you specify, maps
+the answer into the same `{prompt, answer}` rows the teach door eats, and records where every row came from. The
+worked example does that against The Graph's hosted Subgraph MCP — live, or not at all.
+
+The design this implements is `docs/mcp-integration-design.md`. The Graph-specific pipelines and the four-arm
+benchmark live in `graph/`, per `graph/README.md`; this package owns the seam between the two directions
+(`src/rows.ts`, `src/datasource.ts`).
 
 ---
 
@@ -39,8 +46,15 @@ This is the part worth reading before anything else.
 6. **It will never change a shared model behind your back.** `apply_knowledge` / `remove_knowledge` are not
    registered unless `AINIZE_MCP_ALLOW_APPLY=1`, `remove` needs `confirm: true`, and both say plainly that the change
    is visible to every node on the machine and survives a restart.
-7. **It will never publish to a permanent ledger by accident.** Publishing is opt-in and refused on a node whose
-   ledger is the shared AIN chain (not yet shipped in this package — see *Not in this version*).
+7. **It will never publish to a permanent ledger by accident.** `publish_knowledge` is not registered unless
+   `AINIZE_MCP_ALLOW_PUBLISH=1`; on a node whose ledger is the shared AIN chain it is refused outright with
+   `permanent_ledger_refused`; both consents are required inputs with no default; and the confirmation phrase has to
+   contain the lesson id, so a model cannot approve a publish by pattern-matching "yes".
+8. **It will never spend a daily lesson on nothing.** A lesson is charged by the node the moment it is submitted and
+   is never refunded, so `teach` asks the model what it already knows first and refuses with `nothing_to_train` when
+   every probed question is already answered — and it never retries a failed lesson by itself.
+9. **It will never turn somebody else's data into training by itself.** The MCP client half stops at a training set.
+   Reviewing the rows and spending the GPU are separate, confirmed calls.
 
 ### 이 서버가 당신 없이 하지 않는 일 (한국어)
 
@@ -55,6 +69,13 @@ This is the part worth reading before anything else.
    있으면 누가, 얼마나 오래 잡고 있는지 문장으로 알려줍니다.
 6. **공유 모델을 몰래 바꾸지 않습니다.** `apply_knowledge`/`remove_knowledge`는 명시적으로 켜야 하고, 이 기계의 모든
    노드에 영향을 준다는 경고를 함께 돌려줍니다.
+7. **오늘의 수업을 헛되이 쓰지 않습니다.** 노드는 제출 순간에 하루 수업 한 번을 차감하고 환불하지 않습니다. 그래서
+   `teach`는 먼저 모델이 이미 아는지 물어보고, 전부 알고 있으면 `nothing_to_train`으로 거절합니다. 실패한 수업을
+   스스로 다시 돌리지 않습니다.
+8. **발행은 되돌릴 수 없습니다.** `publish_knowledge`는 기본으로 꺼져 있고, 공용 AIN 체인 노드에서는 아예 거절하며,
+   두 개의 동의와 수업 id가 들어간 확인 문구를 요구합니다. 수익 배분은 발행 화면의 70 %가 아니라 실제 계산값
+   (부모가 있으면 49 %)을 보여줍니다.
+9. **남의 데이터를 혼자 학습으로 바꾸지 않습니다.** MCP 클라이언트 쪽은 학습 세트까지만 만들고 멈춥니다.
 
 ---
 
@@ -119,8 +140,13 @@ same object shape:
 | `AINIZE_MCP_MAX_PER_PURCHASE` | ceiling for one purchase | the session budget | yes |
 | `AINIZE_MCP_MAX_TEACH_JOBS` | daily lessons this server may spend | `1` | yes |
 | `AINIZE_MCP_ALLOW_APPLY` | register `apply_knowledge` / `remove_knowledge` | off | yes |
-| `AINIZE_MCP_ALLOW_PUBLISH` / `_ALLOW_AIN_PUBLISH` | reserved for the publish tool | off | yes |
-| `AINIZE_MCP_STATE_DIR` | where the purchase journal is persisted (mode 0600) | memory only | no |
+| `AINIZE_MCP_ALLOW_PUBLISH` | register `publish_knowledge` (irreversible) | off | yes |
+| `AINIZE_MCP_ALLOW_AIN_PUBLISH` | also allow it on a node whose ledger is the shared AIN chain | off | yes |
+| `AINIZE_MCP_STATE_DIR` | where the purchase journal and the provenance records are persisted (mode 0600) | memory only | no |
+| `AINIZE_MCP_DOWNLOAD_DIR` | where `download_lesson` writes files | `<state dir>/lessons`, else the temp dir | yes (the path) |
+| `AINIZE_MCP_MAX_DOWNLOAD_MB` | ceiling for one downloaded artefact | `512` | yes |
+| `AINIZE_MCP_POLL_MS` | how often a running lesson is re-read from the node | `3000` | no |
+| `GRAPH_API_KEY` | The Graph gateway key — used by the MCP **client** example only, never by a tool | — | **never** |
 | `AINIZE_MCP_CONFIG` | a JSON file with the same keys in snake_case; env wins over it | — | no |
 
 ## Which node to point at
@@ -152,7 +178,12 @@ live test until it is removed.
 | `live_test` | MODEL | free, 1 of 20/hour **shared** | no — job handle | when the node serves a model |
 | `job_status` / `job_list` | READ | free | ≤ `wait_ms`, locally | always |
 | `job_cancel` | MODEL | free | < 200 ms | always |
+| `create_training_set` | MODEL | free (row/byte quota) | < 1 s | teaching key + teach enabled |
+| `teach_preflight` | MODEL | free live-test units ×2 buckets | no — job handle | teaching key + teach enabled |
+| `teach` | MODEL | **one daily lesson, non-refundable** | no — job handle | teaching key + teach enabled |
+| `download_lesson` | MODEL | free | seconds | teaching key + teach enabled |
 | `apply_knowledge` / `remove_knowledge` | MODEL | free | no — job handle | `AINIZE_MCP_ALLOW_APPLY=1` |
+| `publish_knowledge` | PERMANENT | free of money, **irreversible** | seconds | `AINIZE_MCP_ALLOW_PUBLISH=1` |
 | `quote` | MONEY (read) | free | < 1 s | always |
 | `buy` | MONEY | **real money** | no — job handle | operator + non-zero budget |
 | `reconcile_purchase` | MONEY (read) | free | seconds | operator configured |
@@ -166,11 +197,12 @@ Served as `ainize://instructions` and as the server's `instructions` on connect:
 
 1. **Before you claim a knowledge helps, prove it** — `live_test` with `knowledge: []`, then with the candidate.
 2. **Before you spend, quote** — show the total, the base stack and the remaining budget, then **stop**.
-3. **Everything that touches the model is a job** — poll `job_status`; if the model is held, report *who* and *how
+3. **Before you teach, preflight** — a daily lesson is scarce and is not refunded. `teach` does this for you.
+4. **Everything that touches the model is a job** — poll `job_status`; if the model is held, report *who* and *how
    long* instead of retrying.
-4. **Never print a token, key, password or signature.**
-5. **Never background-poll a human decision.** The turn that asks for approval ends.
-6. **When something is not implemented, say so** — `family_tree` edge kinds, per-knowledge signals and bundle buys
+5. **Never print a token, key, password or signature.**
+6. **Never background-poll a human decision.** The turn that asks for approval ends.
+7. **When something is not implemented, say so** — `family_tree` edge kinds, per-knowledge signals and bundle buys
    return `null` with a note. Report the note; do not invent the number.
 
 ### Resources
@@ -194,6 +226,10 @@ Every failure an agent can act on comes back as a normal tool result with `isErr
 | `per_purchase_cap_exceeded` | over `AINIZE_MCP_MAX_PER_PURCHASE` or the call's `max_price` | no |
 | `already_purchased` | this node already bought it; nothing was charged | no |
 | `idempotency_replay` | the same key was already used — replays the result, or sends you to reconcile | no |
+| `nothing_to_train` | every probed question is already answered correctly, so no lesson was submitted | no |
+| `teach_quota_consumed` | the lesson failed (or the session lesson cap is spent); the day's lesson is gone either way | no |
+| `base_rejected` / `base_retired` | the knowledge you asked to build on cannot be a base (rejected, challenged, superseded) | no |
+| `permanent_ledger_refused` | publishing was aimed at the shared AIN chain, where nothing can be recalled | no |
 | `model_busy` | the shared runtime lock is held; the message names the holder | yes (30 s) |
 | `job_not_found` | jobs are session-scoped and evicted 30 minutes after they finish | no |
 | `node_unreachable` | the node did not answer at all | yes |
@@ -204,12 +240,136 @@ queued) and a quote of a knowledge that is already owned.
 
 ---
 
+## Teaching, through MCP
+
+The teach door is the half of Ainize that makes new knowledge rather than reselling it, and it is the part an agent
+can drive end to end. Four tools, in the order they are meant to be called:
+
+```
+create_training_set   rows in → a training set on the node (free, sub-second, de-duped by content)
+teach_preflight       ask the model each question FIRST: will_train / already_known / overlaps_listing / invalid
+teach                 spend one daily lesson and train it — optionally ON TOP OF an existing knowledge
+download_lesson       take the knowledge file, the recipe and the run-it-yourself notes; the draft stays private
+publish_knowledge     irreversible, opt-in: announce it on the ledger and offer it for sale
+```
+
+**A lesson is scarce like money.** The node charges one of `jobs_per_key_per_day` the moment a lesson is submitted —
+before it trains, before it checks — and never refunds it. So:
+
+- `teach` runs the preflight itself and refuses with `nothing_to_train` when every probed question is already
+  answered correctly. The per-question verdicts come back in the refusal, and no lesson is spent.
+- When the key has one lesson left today, `teach` requires `confirm: true` and says so.
+- `AINIZE_MCP_MAX_TEACH_JOBS` caps what one MCP session may spend. It is server configuration; no argument raises it.
+- A failed lesson comes back as `teach_quota_consumed`, never as an automatic retry. Spending another one is a
+  decision a person makes.
+- `dry_run: true` resolves the base, the quota and the rows and reports what *would* happen without uploading,
+  probing or training anything.
+
+**`base` is not `compare_with`.** `base` is what the lesson is trained on top of: recorded as a parent for good,
+paid a share of every sale, and required by anyone who buys the child. `compare_with` is loaded during the lesson
+for comparison only and is recorded nowhere. They map to the node's `base_ids` and `context_ids`; the deprecated
+`builds_on_context` is never sent.
+
+```jsonc
+teach {
+  "rows": [{ "prompt": "픽셀플러스의 종목코드는?", "answer": "087600" }],
+  "base": ["krx-all-2761"],        // trained on top of it, and its parent for good
+  "mode": "extend",                 // "extend" needs a base; "merge" is not available on any node yet
+  "export": "delta",                // "delta" needs the base loaded; "squash" is stand-alone
+  "effort": "balanced"
+}
+```
+
+**Reading the result.** `job_status` on a lesson returns the node's own 13-state machine (`native_state`), one
+sentence for what is happening, and — when it lands — *what it learned and what it did not*: every question that
+still fails with what the model said instead, the taught/held-out/locality checks, whether the publish gate is open,
+and the `draft_id` you can immediately `live_test` against the bare model. A lesson trained on a stub node says
+`simulated: true` and the note says nothing was measured in a live model.
+
+**Publishing** shows the real revenue split before it writes anything. With a lineage pool of 0.3 and a contributor
+share of 0.7, a knowledge *with a parent* pays its teacher 0.7 × 0.7 = **49 %** of the price, not the 70 % the web
+publish sheet prints (`docs/ux-critique-3.json`, item 186). `publish_knowledge` computes it from the node's own
+`royalty_share` / `contributor_share`, per `royaltySplit` in `packages/core/src/catalog.ts`, and shows it in
+`dry_run` before either consent is asked for.
+
+---
+
+## Ainize as an MCP client — subgraph → training set
+
+`McpDataSource` (`src/datasource.ts`) is the other direction: it connects to somebody *else's* MCP server over SSE,
+Streamable HTTP or stdio, calls a tool you name, and hands back both the answer and a provenance record. It maps the
+answer into `{prompt, answer}` rows with a declarative mapping, so the mapping is JSON a human can read and re-run —
+not a closure buried in a script.
+
+```ts
+const source = new McpDataSource({
+  name: 'subgraph-mcp',
+  transport: { kind: 'sse', url: 'https://subgraphs.mcp.thegraph.com/sse', headers: { Authorization: `Bearer ${key}` } },
+});
+await source.connect();
+const { rows, provenance, rejected } = await source.fetchRows({
+  tool: 'execute_query_by_subgraph_id',
+  arguments: { subgraph_id: '5zvR82…', query: '{ _meta { block { number } } tokens(first: 20) { id symbol name } }' },
+  mapping: {
+    path: 'data.tokens',
+    prompt: 'What is the {chain} contract address of the {name} ({symbol}) token?',
+    answer: '{id}',
+    require: ['id', 'symbol', 'name'],
+    constants: { chain: 'Ethereum mainnet' },
+  },
+  upstream: { subgraph_id: '5zvR82…', block: 25903086 },
+  note_fields: ['subgraph_id', 'block'],
+});
+// → create_training_set { rows, provenance }   … and STOP.
+```
+
+**Provenance is the point.** `RowProvenance` records the server, the negotiated protocol version, whether a
+credential was presented (never the credential), the tool, the exact arguments and their sha256, the block the answer
+was pinned to, a hash per row and the sha256 of the canonical JSONL. That last one is *the node's own hash*
+(`test/rows.test.ts` holds this implementation to `sha256Rows` in `packages/node/src/teach-dataset.ts`), so a caller
+knows the training-set id before uploading and identical rows land on the same training set instead of a second copy.
+Because the node's dataset API has no provenance field yet, the compact line goes into each row's own `note` — which
+is what a buyer sees when the training set is published with notes — and the full record is written beside the
+journal when a state directory is configured.
+
+**The hard stop.** The pipeline ends at `create_training_set`. It never chains into `teach`: one agent turn must not
+be able to spend a day's lessons on on-chain data nobody has read.
+
+### The worked example
+
+```bash
+export GRAPH_API_KEY=…            # https://thegraph.com/studio/apikeys/
+node packages/mcp/dist/examples/subgraph-to-training-set.js \
+  --keyword uniswap --subgraph 5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV --first 20 \
+  --out /tmp/uniswap.jsonl --upload --name "Uniswap v3 token addresses"
+```
+
+It follows the Subgraph MCP's *own* mandated workflow, which that server states in its `graphql://subgraph`
+resource: search → **always** check the 30-day query volume → read the schema → run a bounded, block-pinned query.
+Measured on this machine on 2026-09-04 and reported honestly by the example rather than papered over:
+
+- the hosted server speaks the **legacy HTTP+SSE** transport (`POST /mcp` is 404 there);
+- `get_deployment_30day_query_counts` currently answers **0 for every deployment**, so the ranking signal the
+  workflow depends on is unavailable. The example still calls it, still prints what it said, and then *asks for
+  `--subgraph <id>` instead of guessing* — which is what the Subgraph MCP's instructions say to do when volumes
+  cannot decide;
+- the schema is fetched and checked against the mapping before any field name is used;
+- rows are deliberately **immutable facts only** (an address, a symbol, a name). A price or a TVL changes every
+  block: that is retrieval, not memory, and training it produces a knowledge that is wrong tomorrow.
+
+**No key, no run.** `graph/README.md` requires live data, so a missing `GRAPH_API_KEY` is a clear failure with an
+instruction, never a silent fall back to fixtures. (`--anonymous` is offered because the hosted server does answer
+unauthenticated — the run is then attributable to nobody, which is not what a real integration ships.)
+
+---
+
 ## Tests
 
 ```bash
 npm test -w packages/mcp                      # unit + tool handlers against a fake node (fast, no cluster needed)
 AINIZE_SMOKE_NODE_URL=http://localhost:3422 npm test -w packages/mcp    # + a real-node smoke test
 AINIZE_MCP_SMOKE_LIVE=1 npm test -w packages/mcp                        # + one real before/after on the shared GPU
+GRAPH_API_KEY=… npm test -w packages/mcp                                # + the live Subgraph MCP smoke test
 npx tsc -p packages/mcp/tsconfig.json --noEmit
 ```
 
@@ -219,8 +379,11 @@ npx tsc -p packages/mcp/tsconfig.json --noEmit
 
 ## Not in this version
 
-- **The teach tools** (`teach`, `teach_preflight`, `create_training_set`) and **`publish`** — the next PRs. The teach
-  door already accepts `base_ids`/`context_ids` on the node, and the tool schema is designed against that.
+- **Prompts and the `ainize://knowledge/{id}` resource template**, `SKILL.md` and `EVAL.md` — the next PR.
+- **`merge`.** Two bases is a merge, which no node supports yet: the schema reserves the value and the refusal quotes
+  the node's own `merge_not_available`.
+- **A provenance field on the dataset manifest.** Until the lineage work adds one, provenance rides in each row's
+  `note` and in a JSON record beside the journal (§ *Ainize as an MCP client*).
 - **`reconcile_purchase` cannot re-fetch a body itself.** It reports `settled_no_body` with the tx hash and names the
   recovery, because the blob fetch needs a signature from the *node identity* key, which this server deliberately
   does not hold.

@@ -9,6 +9,7 @@
  *                header — so a header is built per attempt and never cached or replayed.
  */
 import { createHash } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
 import { signMessage } from '@ngram/core';
 import type { McpConfig, TeachKey } from './config.js';
 import { UnreachableError, UpstreamError } from './errors.js';
@@ -123,6 +124,37 @@ export class AinizeClient {
 
   async request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     return (await this.raw<T>(path, opts)).body;
+  }
+
+  /**
+   * Fetch a node path straight to a file. Two reasons this is not `request()`: the bodies are binary (a knowledge
+   * file is an .npz of tens of megabytes), and the node's own download links carry a short-lived token in the query
+   * string — a credential, which must be used here and never returned to the model.
+   */
+  async download(path: string, destPath: string, opts: { maxBytes?: number; timeoutMs?: number } = {}): Promise<{ path: string; bytes: number }> {
+    const max = opts.maxBytes ?? 512 * 1024 * 1024;
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.cfg.nodeUrl}${path}`, { redirect: 'manual', signal: AbortSignal.timeout(opts.timeoutMs ?? 10 * 60_000) });
+    } catch (e) {
+      throw new UnreachableError(this.cfg.nodeUrl, (e as Error).message);
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      let body: Record<string, unknown>;
+      try { body = JSON.parse(text) as Record<string, unknown>; } catch { body = { error: text.slice(0, 400) }; }
+      throw new UpstreamError(res.status, body, path.split('?')[0] as string);
+    }
+    const declared = Number(res.headers.get('content-length') ?? 0);
+    if (declared > max) {
+      throw new UpstreamError(413, { error: `too_large: the file is ${declared} bytes, over this server's ${max}-byte download cap (AINIZE_MCP_MAX_DOWNLOAD_MB)` }, path.split('?')[0] as string);
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.byteLength > max) {
+      throw new UpstreamError(413, { error: `too_large: the file is ${buf.byteLength} bytes, over this server's ${max}-byte download cap (AINIZE_MCP_MAX_DOWNLOAD_MB)` }, path.split('?')[0] as string);
+    }
+    writeFileSync(destPath, buf, { mode: 0o600 });
+    return { path: destPath, bytes: buf.byteLength };
   }
 
   /** A short-lived read cache. `/api/info` is 60 s, `/api/teach/policy` is 10 s (it is rate-limited per IP). */

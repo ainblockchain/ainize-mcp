@@ -3,6 +3,7 @@
  * request log so a test can assert what was NOT called (a dry run must not touch `/x402/...`; a replayed buy must
  * not reach the node at all).
  */
+import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
@@ -31,6 +32,21 @@ export interface FakeState {
   buyDelayMs: number;
   /** Planted in an error body to prove the scrubber runs on failures too. */
   leakSecret: string | null;
+
+  // ---- teach ------------------------------------------------------------------------------------------------
+  /** The statuses a lesson walks through, one per poll. The last one is where it stops. */
+  teachFlow: string[];
+  /** What the preflight says about each probed question, in order. */
+  preflightStatuses: ('will_train' | 'already_known' | 'overlaps_listing' | 'invalid')[];
+  preflightFail: { status: number; body: Record<string, unknown> } | null;
+  datasetFail: { status: number; body: Record<string, unknown> } | null;
+  jobFail: { status: number; body: Record<string, unknown> } | null;
+  /** Lessons this key has already created today, as `GET /api/teach/jobs` would report them. */
+  lessonsUsedToday: number;
+  jobsPerKeyPerDay: number;
+  /** What `POST /:id/publish` answers. */
+  publishStatus: 'ANNOUNCED' | 'PENDING_REVIEW';
+  teachBases: { patch_id: string; sha256: string; name?: string; status?: string }[];
 }
 
 export const NODE_ADDRESS = '0x1111111111111111111111111111111111111111';
@@ -42,7 +58,13 @@ export class FakeNode {
     price: '5', currency: 'CREDIT', ledger: 'local', quorum_ok: true, sellable: true, purchased: false, owned: false,
     has_body: false, requires: [], purchases: [], settlements: [], runtimeAvailable: true, teachEnabled: true,
     lock: null, waiting: 0, chatDelayMs: 5, chatFail: null, buyFail: null, buyDelayMs: 5, leakSecret: null,
+    teachFlow: ['QUEUED', 'TRAINING', 'READY'], preflightStatuses: ['will_train'], preflightFail: null,
+    datasetFail: null, jobFail: null, lessonsUsedToday: 0, jobsPerKeyPerDay: 3, publishStatus: 'ANNOUNCED',
+    teachBases: [],
   };
+  /** dataset id → the rows it holds, so a preflight and a lesson talk about the same questions. */
+  readonly datasets = new Map<string, { id: string; rows: { prompt: string; answer: string; note?: string }[]; sha256: string; created: boolean; name: string }>();
+  readonly lessons = new Map<string, { id: string; step: number; dataset_id: string; body: Record<string, unknown> }>();
   private server: Server | null = null;
   url = '';
   /** request_id → the ticket the node would hand out. */
@@ -62,6 +84,42 @@ export class FakeNode {
   }
 
   called(pathStart: string): RecordedRequest[] { return this.requests.filter((r) => r.path.startsWith(pathStart)); }
+
+  readonly published: { job: string; body: Record<string, unknown> }[] = [];
+
+  /** One lesson as `GET /api/teach/jobs/:id` renders it, walking `teachFlow` one step per read. */
+  private lesson(id: string) {
+    const l = this.lessons.get(id)!;
+    const status = this.state.teachFlow[Math.min(l.step, this.state.teachFlow.length - 1)] ?? 'READY';
+    const rows = this.datasets.get(l.dataset_id)?.rows ?? [];
+    const done = ['READY', 'NEEDS_MORE', 'ANNOUNCED', 'PENDING_REVIEW'].includes(status);
+    const facts = rows.map((r, i) => ({
+      prompt: r.prompt, answer: r.answer,
+      ...(done ? { hit: i !== 0 || rows.length === 1, after_answer: r.answer, base_answer: 'something else', heldout_hit: true } : {}),
+    }));
+    return {
+      id, status, name: 'a lesson', facts,
+      ...(status === 'QUEUED' ? { position: 0, eta_s: null } : {}),
+      ...(status === 'TRAINING' ? { progress: { step: 4, max_steps: 20, hits: 2, total: 3, elapsed_s: 12 } } : {}),
+      ...(done
+        ? {
+            checks: {
+              executed: true, ok: true, simulated: true,
+              taught: { hits: facts.filter((f) => f.hit).length, total: facts.length },
+              heldout: { hits: facts.length, total: facts.length },
+              parent_regression: { ok: true, hit: 10, total: 10 },
+              locality: { ok: true, same: 20, total: 20 },
+            },
+            result: { sha256: 'e'.repeat(64), rows: facts.length, size_bytes: 1024 },
+            draft_id: 'taught-draft-1',
+          }
+        : {}),
+      ...(this.state.teachBases.length ? { bases: this.state.teachBases, mode: 'extend', export: 'delta' } : {}),
+      dataset: { id: l.dataset_id, sha256: this.datasets.get(l.dataset_id)?.sha256 ?? null, rows: rows.length, trained_rows: facts.length, source: 'inline' },
+      publish_status: 'none', context_patch_ids: (l.body.context_ids as string[]) ?? [],
+      created_at: Date.now() - 1000, updated_at: Date.now(),
+    };
+  }
 
   private entry(id: string) {
     const s = this.state;
@@ -167,9 +225,121 @@ export class FakeNode {
       if (!this.isOperator(req)) return json(401, { error: 'operator login required' });
       return json(200, { items: [this.entry('k1')] });
     }
+    // ---- teach ------------------------------------------------------------------------------------------------
+    // Every teach route is signed. The fake checks only that a v2 header is PRESENT and shaped right; `auth.test.ts`
+    // is what holds the signature itself to the node's own implementation.
+    const signed = () => /^0x[0-9a-fA-F]{40}:\d+:.+:v2$/.test(String(req.headers['x-ngram-auth'] ?? ''));
+
+    if (pathname === '/api/teach/datasets' && req.method === 'POST') {
+      if (!signed()) return json(401, { error: 'invalid_signature: x-ngram-auth header missing' });
+      if (s.datasetFail) return json(s.datasetFail.status, s.datasetFail.body);
+      const b = (body ?? {}) as { rows?: { prompt: string; answer: string; note?: string }[]; name?: string };
+      const rows = (b.rows ?? []).filter((r) => r.prompt && r.answer);
+      const bad = (b.rows ?? []).length - rows.length;
+      // the node de-dupes by the canonical bytes: the same rows land on the same dataset
+      const sha = createHash('sha256').update(JSON.stringify(rows)).digest('hex');
+      const existing = [...this.datasets.values()].find((d) => d.sha256 === sha);
+      const id = existing?.id ?? `ds_${this.datasets.size + 1}`;
+      this.datasets.set(id, { id, rows, sha256: sha, created: !existing, name: b.name ?? 'a training set' });
+      return json(existing ? 200 : 201, {
+        dataset: { id, sha256: sha, revision: 1, rows: rows.length, invalid_rows: bad, name: b.name ?? 'a training set', status: 'ready', retention: 'keep', size_bytes: JSON.stringify(rows).length },
+        report: {
+          summary: { source_rows: (b.rows ?? []).length, accepted: rows.length, rejected: bad, duplicates: 0, conflicts: 0, blocked: 0, too_long: 0, empty: bad, not_parsed: 0, over_cap: 0, fixed: 0, shared_ending: 0 },
+          rows: [
+            ...rows.map((r, i) => ({ index: i, line: i + 1, status: 'ok', prompt: r.prompt, answer: r.answer })),
+            ...Array.from({ length: bad }, (_, i) => ({ index: null, line: rows.length + i + 1, status: 'empty', detail: 'the answer was blank' })),
+          ],
+        },
+        created: !existing,
+      });
+    }
+    const dsRows = /^\/api\/teach\/datasets\/([^/]+)\/rows$/.exec(pathname);
+    if (dsRows) {
+      if (!signed()) return json(401, { error: 'invalid_signature: x-ngram-auth header missing' });
+      const d = this.datasets.get(decodeURIComponent(dsRows[1] as string));
+      if (!d) return json(404, { error: 'dataset_not_found: no such dataset on this node' });
+      const offset = Number(q.get('offset') ?? 0); const limit = Number(q.get('limit') ?? 50);
+      const page = d.rows.slice(offset, offset + limit);
+      return json(200, { total: d.rows.length, source_rows: d.rows.length, offset, limit, summary: {}, items: page.map((r, i) => ({ index: offset + i, line: offset + i + 1, status: 'ok', prompt: r.prompt, answer: r.answer })) });
+    }
+    if (pathname === '/api/teach/preflight') {
+      if (!signed()) return json(401, { error: 'invalid_signature: x-ngram-auth header missing' });
+      if (s.preflightFail) return json(s.preflightFail.status, s.preflightFail.body);
+      const b = (body ?? {}) as { facts?: { prompt: string }[]; dataset_id?: string; limit?: number };
+      const n = b.facts?.length ?? Math.min(b.limit ?? 8, this.datasets.get(b.dataset_id ?? '')?.rows.length ?? 0);
+      const facts = Array.from({ length: n }, (_, i) => {
+        const status = s.preflightStatuses[Math.min(i, s.preflightStatuses.length - 1)] ?? 'will_train';
+        return { index: i, status, ...(status === 'already_known' ? { base_answer: 'the model already says this' } : {}), ...(status === 'overlaps_listing' ? { detail: 'Knowledge k1' } : {}) };
+      });
+      return json(200, {
+        facts, trainable: facts.filter((f) => f.status === 'will_train').length,
+        quota: { key_remaining: 19, ip_remaining: 19 },
+        ...(b.dataset_id ? { sampled: { checked: n, of: this.datasets.get(b.dataset_id)?.rows.length ?? n } } : {}),
+      });
+    }
+    if (pathname === '/api/teach/jobs' && req.method === 'POST') {
+      if (!signed()) return json(401, { error: 'invalid_signature: x-ngram-auth header missing' });
+      if (s.jobFail) return json(s.jobFail.status, s.jobFail.body);
+      const b = (body ?? {}) as Record<string, unknown>;
+      const id = `lesson-${this.lessons.size + 1}`;
+      this.lessons.set(id, { id, step: 0, dataset_id: String(b.dataset_id ?? ''), body: b });
+      s.lessonsUsedToday += 1;
+      return json(202, { job: this.lesson(id), quota: { key_remaining: Math.max(0, s.jobsPerKeyPerDay - s.lessonsUsedToday), ip_remaining: 5, rows_remaining: 300, rows_ip_remaining: 500 } });
+    }
     if (pathname === '/api/teach/jobs' || pathname === '/api/teach/datasets') {
-      if (!req.headers['x-ngram-auth']) return json(401, { error: 'invalid_signature: x-ngram-auth header missing' });
-      return json(200, { items: [] });
+      if (!signed()) return json(401, { error: 'invalid_signature: x-ngram-auth header missing' });
+      if (pathname === '/api/teach/datasets') return json(200, { items: [...this.datasets.values()].map((d) => ({ id: d.id, name: d.name, rows: d.rows.length, sha256: d.sha256, created_at: Date.now(), retention: 'keep' })) });
+      // `lessonsToday` counts today's rows out of this list, so the fake reports exactly that many
+      return json(200, { items: Array.from({ length: s.lessonsUsedToday }, (_, i) => ({ id: `lesson-${i + 1}`, status: 'READY', created_at: Date.now() })) });
+    }
+    const lessonSave = /^\/api\/teach\/jobs\/([^/]+)\/save$/.exec(pathname);
+    if (lessonSave) {
+      if (!signed()) return json(401, { error: 'invalid_signature' });
+      const id = decodeURIComponent(lessonSave[1] as string);
+      if (!this.lessons.has(id)) return json(404, { error: 'not found' });
+      const token = 'tok-download-secret-0123456789';
+      return json(200, {
+        download: { npz_url: `/p2p/blob/${'e'.repeat(64)}?token=${token}&name=lesson.npz`, recipe_url: `/api/teach/jobs/${id}/recipe?token=${token}`, readme_url: `/api/teach/jobs/${id}/local-run?token=${token}`, expires_at: Date.now() + 86_400_000 },
+        sha256: 'e'.repeat(64), rows: 3, size_bytes: 1024, filename: 'lesson-x.npz', repo_url: 'https://example.invalid/repo', model_id: 'Qwen3.8-Flash-Next',
+      });
+    }
+    const challenge = /^\/api\/teach\/jobs\/([^/]+)\/publish-challenge$/.exec(pathname);
+    if (challenge) {
+      if (!signed()) return json(401, { error: 'invalid_signature' });
+      return json(200, { patch_sha256: 'e'.repeat(64), benchmark_hash: 'f'.repeat(64), address: NODE_ADDRESS, signer: NODE_ADDRESS, share: 0.7, claim: 'claim-to-sign' });
+    }
+    const publish = /^\/api\/teach\/jobs\/([^/]+)\/publish$/.exec(pathname);
+    if (publish) {
+      if (!signed()) return json(401, { error: 'invalid_signature' });
+      const b = (body ?? {}) as { consent?: { permanent?: boolean; rights?: boolean }; claim_sig?: string };
+      if (!b.consent?.permanent || !b.consent?.rights) return json(400, { error: 'consent_required: both consent boxes are required' });
+      if (!b.claim_sig) return json(401, { error: 'invalid_signature: the claim signature does not verify for this teaching key' });
+      this.published.push({ job: decodeURIComponent(publish[1] as string), body: b as Record<string, unknown> });
+      return json(200, s.publishStatus === 'ANNOUNCED' ? { status: 'ANNOUNCED', patch_id: 'taught-1', url: `${this.url}/k/taught-1` } : { status: 'PENDING_REVIEW' });
+    }
+    const lessonOne = /^\/api\/teach\/jobs\/([^/]+)$/.exec(pathname);
+    if (lessonOne) {
+      if (!signed()) return json(401, { error: 'invalid_signature' });
+      const id = decodeURIComponent(lessonOne[1] as string);
+      const l = this.lessons.get(id);
+      if (!l) return json(404, { error: 'not found' });
+      if (req.method === 'DELETE') { l.step = s.teachFlow.length; return json(200, { ok: true, status: 'CANCELLED' }); }
+      l.step = Math.min(l.step + 1, s.teachFlow.length - 1);
+      return json(200, { job: this.lesson(id) });
+    }
+    const recipe = /^\/api\/teach\/jobs\/([^/]+)\/(recipe|local-run)$/.exec(pathname);
+    if (recipe) {
+      if (!q.get('token')) return json(401, { error: 'invalid_signature: download token missing' });
+      if (recipe[2] === 'recipe') return json(200, { recipe: 'json', job: decodeURIComponent(recipe[1] as string) });
+      res.writeHead(200, { 'content-type': 'text/markdown' });
+      res.end('# RUN LOCALLY\n');
+      return;
+    }
+    if (pathname.startsWith('/p2p/blob/')) {
+      if (!q.get('token')) return json(401, { error: 'invalid_signature: download token missing' });
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': '8' });
+      res.end(Buffer.from('NPZFAKE\n'));
+      return;
     }
 
     if (pathname.startsWith('/x402/patch/')) {

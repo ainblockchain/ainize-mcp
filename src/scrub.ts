@@ -34,6 +34,9 @@ const PATTERNS: RegExp[] = [
   /0x[0-9a-fA-F]{64,}/g,            // a private key or a secp256k1 signature
   /Bearer\s+[A-Za-z0-9._~+/=-]+/gi, // an operator session
   /0x[0-9a-fA-F]{40}:\d{10,}:[^\s"']+/g, // an x-ngram-auth triple (address:ts:sig[:v2])
+  // A download link's `?token=` IS a credential: it opens a private draft's knowledge file for anyone holding it.
+  // The node hands them out in `npz_url` / `recipe_url` / `readme_url`, which no key-name rule would catch.
+  /([?&](?:token|download_token|api_key|apikey|access_token|key)=)[^&\s"']+/gi,
 ];
 
 export interface ScrubOptions {
@@ -44,7 +47,7 @@ export interface ScrubOptions {
 const scrubString = (s: string, literals: string[]): string => {
   let out = s;
   for (const lit of literals) if (lit && out.includes(lit)) out = out.split(lit).join(REDACTED);
-  for (const re of PATTERNS) out = out.replace(re, REDACTED);
+  for (const re of PATTERNS) out = out.replace(re, (m, prefix?: string) => (prefix ? `${prefix}${REDACTED}` : REDACTED));
   return out;
 };
 

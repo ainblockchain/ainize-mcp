@@ -83,12 +83,25 @@ export class JobTable {
     this.wake(id);
   }
 
+  /**
+   * Record the node's own handle for work that only gets one AFTER it starts — a teach job is submitted from inside
+   * the job, so `job_status` and `download_lesson` learn the lesson id here rather than guessing it.
+   */
+  attach(id: string, native: Partial<Job['native']>): void {
+    const job = this.jobs.get(id);
+    if (!job) return;
+    job.native = { ...job.native, ...native };
+    this.wake(id);
+  }
+
   /** Called by a poller that learned the node's own state (`running`, `TRAINING`, …). */
   observe(id: string, nativeState: string): void {
     const job = this.jobs.get(id);
     if (!job || job.finished_at) return;
     if (job.native_state !== nativeState) { job.native_state = nativeState; this.wake(id); }
-    if (nativeState === 'running' || nativeState === 'RUNNING') job.state = 'running';
+    // `running` is the chat queue's word; a lesson says PREFLIGHT / LOADING / TRAINING / EXPORTED / CHECKING. Both
+    // mean the same thing to a caller: it left the queue and something is happening.
+    if (nativeState !== 'queued' && nativeState.toUpperCase() !== 'QUEUED') job.state = 'running';
   }
 
   get(id: string): Job | null { this.prune(); return this.jobs.get(id) ?? null; }

@@ -40,6 +40,23 @@ test('buy has no id: what gets bought is whatever the quote named', async (t) =>
   assert.equal(buy.tier, 'MONEY');
 });
 
+test('the two irreversible tools are annotated and gated the way the design says', async (t) => {
+  const h = await harness(fullEnv({ AINIZE_MCP_ALLOW_PUBLISH: '1' }));
+  t.after(h.stop);
+  const publish = h.tools.get('publish_knowledge');
+  assert.ok(publish);
+  assert.equal(publish.annotations?.destructiveHint, true);
+  assert.equal(publish.annotations?.idempotentHint, false);
+  assert.equal(publish.tier, 'MONEY', 'permanent belongs to the same tier as spending: no auto-retry, never silent');
+  // neither consent may have a default: they are things a human agreed to, not fields a tool fills in
+  for (const field of ['consent_permanent', 'consent_rights', 'confirm_phrase']) {
+    assert.ok(field in publish.inputSchema, `publish_knowledge must take ${field}`);
+  }
+  const teach = h.tools.get('teach');
+  assert.equal(teach?.annotations?.idempotentHint, false, 'a lesson is spent whether or not it succeeds');
+  assert.ok('dry_run' in (teach?.inputSchema ?? {}), 'every spending tool has a genuinely read-only dry run');
+});
+
 test('every tool has a description that says what it costs or that it is free', async (t) => {
   const h = await harness(fullEnv());
   t.after(h.stop);
@@ -55,9 +72,10 @@ test('the tool set is the one the design names, and nothing operator-administrat
   const h = await harness(fullEnv({ AINIZE_MCP_ALLOW_PUBLISH: '1' }));
   t.after(h.stop);
   assert.deepEqual(h.names.sort(), [
-    'apply_knowledge', 'buy', 'family_tree', 'get_knowledge', 'get_training_set', 'job_cancel', 'job_list',
-    'job_status', 'knowledge_signals', 'live_test', 'my_library', 'node_status', 'quote', 'reconcile_purchase',
-    'remove_knowledge', 'search_knowledge', 'teacher_profile',
+    'apply_knowledge', 'buy', 'create_training_set', 'download_lesson', 'family_tree', 'get_knowledge',
+    'get_training_set', 'job_cancel', 'job_list', 'job_status', 'knowledge_signals', 'live_test', 'my_library',
+    'node_status', 'publish_knowledge', 'quote', 'reconcile_purchase', 'remove_knowledge', 'search_knowledge',
+    'teach', 'teach_preflight', 'teacher_profile',
   ]);
   for (const forbidden of ['verify', 'challenge', 'announce', 'forget', 'runtime_complete', 'peers', 'chain_setup', 'ban']) {
     assert.ok(!h.names.includes(forbidden), `${forbidden} must not be exposed over MCP`);
@@ -69,7 +87,7 @@ test('the instructions resource states the rules the schemas enforce', async (t)
   t.after(h.stop);
   const { instructionsText } = await import('../src/server.js');
   const text = instructionsText(h.ctx);
-  for (const rule of ['PROVE IT', 'QUOTE', 'JOB', 'Never print', 'Never background-poll']) {
+  for (const rule of ['PROVE IT', 'QUOTE', 'PREFLIGHT', 'JOB', 'Never print', 'Never background-poll']) {
     assert.ok(text.includes(rule), `the instructions must state: ${rule}`);
   }
   assert.ok(!text.includes(process.env.AINIZE_TEACH_KEY ?? 'no-key-here'));

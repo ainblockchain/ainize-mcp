@@ -31,8 +31,14 @@ export interface McpConfig {
   allow: { apply: boolean; publish: boolean; ainPublish: boolean };
   /** Where the idempotency journal is persisted (mode 0600). Null = in memory only. */
   stateDir: string | null;
+  /** Where `download_lesson` writes the files it fetches. Defaults under the state dir, else the system temp dir. */
+  downloadDir: string | null;
+  /** Ceiling for one downloaded artefact, in bytes — a knowledge file can be hundreds of megabytes. */
+  maxDownloadBytes: number;
   /** Upstream timeout for a READ call. Model/money calls set their own. */
   timeoutMs: number;
+  /** How often this server asks the node how a running lesson is getting on. */
+  pollMs: number;
 }
 
 const PRIV_RE = /^(0x)?[0-9a-fA-F]{64}$/;
@@ -99,7 +105,10 @@ export function loadConfig(opts: LoadOptions = {}): McpConfig {
       ainPublish: bool(pick('AINIZE_MCP_ALLOW_AIN_PUBLISH', 'allow_ain_publish')),
     },
     stateDir: pick('AINIZE_MCP_STATE_DIR', 'state_dir') ?? null,
+    downloadDir: pick('AINIZE_MCP_DOWNLOAD_DIR', 'download_dir') ?? null,
+    maxDownloadBytes: Math.max(1, Number(pick('AINIZE_MCP_MAX_DOWNLOAD_MB', 'max_download_mb') ?? 512)) * 1024 * 1024,
     timeoutMs: Number(pick('AINIZE_MCP_TIMEOUT_MS', 'timeout_ms') ?? 15_000),
+    pollMs: Math.max(50, Number(pick('AINIZE_MCP_POLL_MS', 'poll_ms') ?? 3_000)),
   };
 }
 
@@ -116,6 +125,7 @@ export const publicSummary = (cfg: McpConfig) => ({
   session_budget: cfg.budget.session,
   max_per_purchase: cfg.budget.perPurchase,
   max_teach_jobs: cfg.budget.teachJobs,
+  max_download_mb: Math.round(cfg.maxDownloadBytes / (1024 * 1024)),
   allow_apply: cfg.allow.apply,
   allow_publish: cfg.allow.publish,
   allow_ain_publish: cfg.allow.ainPublish,

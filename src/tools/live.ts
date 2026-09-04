@@ -15,6 +15,7 @@ import type { Context } from '../context.js';
 import { fail } from '../errors.js';
 import { modelLock, verification, type NodeLock, type RawEntry } from '../format.js';
 import type { Job } from '../jobs.js';
+import { teachJobView, TEACH_TERMINAL, type TeachJobRaw } from '../teach-view.js';
 import { tool, type ToolDef } from './types.js';
 
 interface ChatColumn { content: string; latency_ms: number; truncated?: boolean; finish_reason?: string }
@@ -175,21 +176,41 @@ export function liveTools(ctx: Context): ToolDef[] {
     ).catch(() => null);
   };
 
+  /** A lesson's own state on the node — the 13-state machine, read straight through. */
+  const teachStatus = async (lessonId: string) => {
+    const out = await ctx.client.request<{ job: TeachJobRaw }>(`/api/teach/jobs/${encodeURIComponent(lessonId)}`, { auth: 'teach' }).catch(() => null);
+    return out?.job ?? null;
+  };
+
   tools.push(tool<{ job_id: string; wait_ms?: number }>({
     name: 'job_status',
     title: 'Job status',
     tier: 'READ',
-    description: 'Where a job started by live_test, apply_knowledge, remove_knowledge or buy has got to, and its result once it lands. wait_ms long-polls inside this server (it does not hold a request open on the node), turning a poll loop into one call. Every answer says who holds the shared model and how many are waiting.',
+    description: 'Where a job started by live_test, teach, teach_preflight, apply_knowledge, remove_knowledge or buy has got to, and its result once it lands — for a lesson, that means what the model learned and what it did not. wait_ms long-polls inside this server (it does not hold a request open on the node), turning a poll loop into one call. Every answer says who holds the shared model and how many are waiting. A node lesson id works here too, so a conversation that lost its job_id is not stuck.',
     annotations: { readOnlyHint: true, openWorldHint: true },
     inputSchema: {
-      job_id: z.string().min(1).max(64),
+      job_id: z.string().min(1).max(64).describe('an MCP job_id from this session, or a node lesson id (node_job_id)'),
       wait_ms: z.number().int().min(0).max(25_000).default(0).describe('wait up to this long for the next state change before answering'),
     },
     handler: async (a) => {
       const job = ctx.jobs.get(a.job_id);
-      if (!job) throw fail('job_not_found', `no job ${a.job_id} on this server (jobs are session-scoped and evicted 30 minutes after they finish) — call job_list to see what is still here.`);
+      if (!job) {
+        // Recovery: the id may be a lesson on the node itself — a session restart loses the job table, not the lesson.
+        const lesson = ctx.client.hasTeachKey ? await teachStatus(a.job_id) : null;
+        if (lesson) {
+          return {
+            job_id: null, kind: 'teach', from: 'the node, not this session\'s job table',
+            ...teachJobView(lesson, { canPublish: ctx.cfg.allow.publish && ctx.client.hasTeachKey, nodeUrl: ctx.client.url }),
+            model_lock: await ctx.modelLock(),
+            poll_after_ms: TEACH_TERMINAL.includes(lesson.status) ? 0 : 3000,
+          };
+        }
+        throw fail('job_not_found', `no job ${a.job_id} on this server (jobs are session-scoped and evicted 30 minutes after they finish) — call job_list to see what is still here.`);
+      }
       if (a.wait_ms) await ctx.jobs.waitForChange(a.job_id, a.wait_ms);
       const live = job.kind === 'live_test' ? await chatStatus(job) : null;
+      const lesson = job.kind === 'teach' && job.native.teach_job_id ? await teachStatus(job.native.teach_job_id) : null;
+      if (lesson) ctx.jobs.observe(job.id, lesson.status);
       if (live?.state) ctx.jobs.observe(job.id, live.state);
       const lockView = live ? modelLock(live.lock, { running: live.running, waiting: live.waiting }, live.now) : await ctx.modelLock();
       const base = {
@@ -197,8 +218,13 @@ export function liveTools(ctx: Context): ToolDef[] {
         summary: job.summary, started_at: job.started_at, finished_at: job.finished_at,
         elapsed_ms: (job.finished_at ?? Date.now()) - job.started_at,
         model_lock: lockView,
+        ...(job.native.teach_job_id ? { node_job_id: job.native.teach_job_id } : {}),
         ...(live ? { position: live.position ?? null, queued_ms: live.queued_ms ?? null, running_ms: live.running_ms ?? null } : {}),
-        poll_after_ms: job.finished_at ? 0 : 1500,
+        // a lesson in flight: the node's own progress, ETA and "what is happening", without waiting for it to finish
+        ...(lesson && !job.finished_at
+          ? { lesson: teachJobView(lesson, { canPublish: ctx.cfg.allow.publish && ctx.client.hasTeachKey, nodeUrl: ctx.client.url }) }
+          : {}),
+        poll_after_ms: job.finished_at ? 0 : job.kind === 'teach' ? 3000 : 1500,
       };
       if (job.state === 'done') {
         const result = job.kind === 'live_test' ? liveTestView(job.result as LiveTestPayload) : (job.result as Record<string, unknown>);
@@ -207,6 +233,9 @@ export function liveTools(ctx: Context): ToolDef[] {
       if (job.state === 'failed' || job.state === 'cancelled') {
         const { toToolError } = await import('../errors.js');
         return { ...base, error: job.error ? toToolError(job.error) : { code: 'cancelled', message: 'the job was cancelled', retryable: false } };
+      }
+      if (job.kind === 'teach' && !job.native.teach_job_id) {
+        return { ...base, hint: 'the training set is being uploaded and the model is being asked what it already knows — the lesson has not been submitted yet, so no daily lesson has been charged' };
       }
       return { ...base, hint: job.kind === 'live_test' && lockView.holder ? `waiting: ${lockView.sentence}` : 'still working — poll again, or call job_cancel to give up' };
     },
@@ -226,17 +255,28 @@ export function liveTools(ctx: Context): ToolDef[] {
       if (job.native.request_id) {
         node = await ctx.client.request<{ cancelled: boolean; reason: string; charged: boolean }>('/api/chat/cancel', { method: 'POST', body: { request_id: job.native.request_id } }).catch(() => null);
       }
+      // A lesson is cancelled on the node itself, and the daily lesson it consumed is NOT returned: the node charges
+      // at submit time. Saying "cancelled" without saying that would misreport what it cost.
+      let lessonCancelled: Record<string, unknown> | null = null;
+      if (job.native.teach_job_id) {
+        lessonCancelled = await ctx.client.request<Record<string, unknown>>(`/api/teach/jobs/${encodeURIComponent(job.native.teach_job_id)}`, { method: 'DELETE', auth: 'teach' }).catch(() => null);
+      }
       ctx.jobs.abort(a.job_id);
       return {
         job_id: a.job_id, kind: job.kind,
-        cancelled: node?.cancelled ?? true,
-        reason: node?.reason ?? 'aborted locally',
-        charged: node?.charged ?? false,
+        cancelled: node?.cancelled ?? (job.native.teach_job_id ? !!lessonCancelled : true),
+        reason: node?.reason ?? (job.native.teach_job_id ? (lessonCancelled ? 'lesson cancelled on the node' : 'the node did not accept the cancel') : 'aborted locally'),
+        charged: node?.charged ?? !!job.native.teach_job_id,
+        ...(job.native.teach_job_id ? { node_job_id: job.native.teach_job_id } : {}),
         note: node?.reason === 'already_running'
           ? 'the node had already started this on the model: the work and the metered try stand, and stopping the wait here does not stop the node'
-          : job.kind === 'buy'
-            ? 'a buy that had already reached the gateway may still have settled — call reconcile_purchase before ever buying again'
-            : 'nothing had reached the model, so nothing was charged',
+          : job.native.teach_job_id
+            ? 'the lesson is cancelled, but the daily lesson it consumed is NOT returned — the node charges one at submit time, before any training happens'
+            : job.kind === 'buy'
+              ? 'a buy that had already reached the gateway may still have settled — call reconcile_purchase before ever buying again'
+              : job.kind === 'teach'
+                ? 'the lesson had not been submitted to the node yet, so no daily lesson was charged'
+                : 'nothing had reached the model, so nothing was charged',
       };
     },
   }));

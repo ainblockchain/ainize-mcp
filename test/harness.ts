@@ -42,6 +42,19 @@ export async function harness(env: Record<string, string> = {}, setup?: (fake: F
   };
 }
 
+/**
+ * Poll a job to a standstill. `wait_ms` answers on the NEXT state change, which for a lesson means QUEUED → TRAINING
+ * → READY: three answers, not one. A caller wanting only the end result loops, exactly like this.
+ */
+export async function pollUntilFinished(h: Harness, jobId: string, timeoutMs = 15_000): Promise<{ isError: boolean; data: Record<string, unknown> }> {
+  const deadline = Date.now() + timeoutMs;
+  let last = await h.call('job_status', { job_id: jobId, wait_ms: 0 });
+  while (['queued', 'running'].includes(String(last.data.state)) && Date.now() < deadline) {
+    last = await h.call('job_status', { job_id: jobId, wait_ms: Math.min(2000, Math.max(0, deadline - Date.now())) });
+  }
+  return last;
+}
+
 /** An operator-and-teaching-key server with a spending budget — the full-capability shape. */
 export const fullEnv = (over: Record<string, string> = {}): Record<string, string> => ({
   AINIZE_TOKEN: OPERATOR_TOKEN,

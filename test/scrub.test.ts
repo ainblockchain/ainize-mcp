@@ -38,3 +38,17 @@ test('error sentences are scrubbed too, and a cycle does not hang', () => {
   a.self = a;
   assert.deepEqual(scrub(a), { name: 'x', self: '[circular]' });
 });
+
+test('a download link\'s ?token= is a credential and never survives the scrubber', () => {
+  const out = scrub({
+    download: {
+      npz_url: '/p2p/blob/abc?token=tok-download-secret-0123456789&name=lesson.npz',
+      recipe_url: '/api/teach/jobs/lesson-1/recipe?token=tok-download-secret-0123456789',
+    },
+    prose: 'fetch it from http://localhost:3422/p2p/blob/abc?token=deadbeefdeadbeef',
+  });
+  const text = JSON.stringify(out);
+  assert.ok(!text.includes('tok-download-secret'), text);
+  assert.ok(!text.includes('deadbeefdeadbeef'), text);
+  assert.ok(text.includes('name=lesson.npz'), 'the rest of the link still reads');
+});
