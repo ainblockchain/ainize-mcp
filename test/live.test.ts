@@ -192,3 +192,20 @@ test('a knowledge: [] call says plainly what it can and cannot know', async () =
     assert.ok(caveats.some((c) => /removes nothing/.test(c)), JSON.stringify(caveats));
   } finally { await h.stop(); }
 });
+
+test('a job the caller gave up on reports cancellation, not an upstream failure', async () => {
+  const h = await harness(fullEnv());
+  try {
+    h.fake.state.chatDelayMs = 5000;
+    const start = await h.call('live_test', { question: 'x', knowledge: ['k1'] });
+    const id = String(start.data.job_id);
+    await h.call('job_cancel', { job_id: id, reason: 'the human changed their mind' });
+    const after = await h.call('job_status', { job_id: id });
+    assert.equal(after.data.state, 'cancelled');
+    const err = after.data.error as { code: string; message: string; details: Record<string, unknown> };
+    assert.equal(err.code, 'cancelled');
+    assert.match(err.message, /cancelled from this session \(the human changed their mind\)/);
+    assert.ok(!/aborted/i.test(err.message), err.message);
+    assert.equal(typeof err.details.gave_up_after_ms, 'number');
+  } finally { await h.stop(); }
+});

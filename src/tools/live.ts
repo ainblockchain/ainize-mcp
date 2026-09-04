@@ -265,7 +265,18 @@ export function liveTools(ctx: Context): ToolDef[] {
       }
       if (job.state === 'failed' || job.state === 'cancelled') {
         const { toToolError } = await import('../errors.js');
-        return { ...base, error: job.error ? toToolError(job.error) : { code: 'cancelled', message: 'the job was cancelled', retryable: false } };
+        // A job the CALLER gave up on is not an upstream failure. It used to report the abort's own words — "This
+        // operation was aborted" as an `upstream_error` — which reads like the node broke, and sends an agent
+        // looking for a fault that is its own decision.
+        if (job.state === 'cancelled') {
+          return { ...base, error: {
+            code: 'cancelled',
+            message: `this job was cancelled from this session${job.cancel_reason ? ` (${job.cancel_reason})` : ''} — nothing is still running, and nothing more will happen to it.`,
+            retryable: false,
+            details: { gave_up_after_ms: (job.finished_at ?? Date.now()) - job.started_at, underlying: job.error ? toToolError(job.error).message : null },
+          } };
+        }
+        return { ...base, error: job.error ? toToolError(job.error) : { code: 'failed', message: 'the job failed with no reason recorded', retryable: false } };
       }
       if (job.kind === 'teach' && !job.native.teach_job_id) {
         return { ...base, hint: 'the training set is being uploaded and the model is being asked what it already knows — the lesson has not been submitted yet, so no daily lesson has been charged' };
@@ -294,7 +305,7 @@ export function liveTools(ctx: Context): ToolDef[] {
       if (job.native.teach_job_id) {
         lessonCancelled = await ctx.client.request<Record<string, unknown>>(`/api/teach/jobs/${encodeURIComponent(job.native.teach_job_id)}`, { method: 'DELETE', auth: 'teach' }).catch(() => null);
       }
-      ctx.jobs.abort(a.job_id);
+      ctx.jobs.abort(a.job_id, a.reason);
       return {
         job_id: a.job_id, kind: job.kind,
         cancelled: node?.cancelled ?? (job.native.teach_job_id ? !!lessonCancelled : true),

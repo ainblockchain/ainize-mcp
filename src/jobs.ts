@@ -33,6 +33,8 @@ export interface Job {
   error: unknown;
   /** A short human line for `job_list` ("픽셀플러스 종목코드는? · pixelplus-087600"). */
   summary: string;
+  /** Why this session gave up, when it did — so `job_status` can say that instead of the abort's own words. */
+  cancel_reason?: string;
   controller: AbortController;
 }
 
@@ -115,11 +117,12 @@ export class JobTable {
   }
 
   /** Abort the in-flight upstream call. The caller still has to tell the node (`POST /api/chat/cancel`). */
-  abort(id: string): Job | null {
+  abort(id: string, reason?: string): Job | null {
     const job = this.jobs.get(id);
     if (!job || job.finished_at) return job ?? null;
     job.state = 'cancelled';
     job.native_state = 'cancelled';
+    if (reason) job.cancel_reason = reason;
     job.controller.abort();
     this.wake(id);
     return job;
