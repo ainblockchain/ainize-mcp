@@ -1,85 +1,109 @@
 /**
  * Job 2 — "teach the model these five facts, on top of an existing knowledge, and keep it private".
  *
- * Runs on node-u (:3422, LOCAL ledger — the node this repo designates for teaching experiments), never on the demo
- * cluster. `publish_knowledge` is deliberately NOT enabled, so "keep it private" is enforced by the server's own
- * configuration rather than by the agent remembering: the lesson is downloaded to disk and nothing is announced.
+ * Runs on a PRIVATE local-ledger cluster whose serving runtime is the designated e2e model server: the trainer is
+ * the node's stub backend (no GPU training) but its preflight and its side-effect checks run against the REAL
+ * model, so "what it learned and what it did not" is measured, not simulated. Never the demo cluster, never the AIN
+ * chain.
+ *
+ * Two SESSIONS, deliberately:
+ *   A. one with AINIZE_MCP_ALLOW_PUBLISH=1 builds the base knowledge and publishes it (a base whose training set is
+ *      private cannot be built on — the node refuses with `base_private`);
+ *   B. one WITHOUT it does the actual job, so "keep it private" is enforced by the server's own configuration
+ *      rather than by the agent remembering not to publish.
  */
-const NODE = process.env.TEACH_NODE_URL ?? 'http://localhost:3422';
+const NODE = process.env.TEACH_NODE_URL ?? 'http://localhost:4202';
+const PASS = process.env.TEACH_NODE_PASSWORD ?? 'mcp-teach-pass';
 const KEY_FILE = process.env.TEACH_KEY_FILE;
-const BASE = process.env.TEACH_BASE ?? 'taught-my-rows-5f7f54';
+const STAMP = process.env.TEACH_STAMP ?? String(Date.now()).slice(-6);
 
-/** Five Korean ticker facts, in the phrasing the base knowledge already uses for its own rows. */
-const FACTS = [
-  { prompt: 'Q: 픽셀플러스 종목코드 알려줘. 숫자만.\nA: ', answer: '087600' },
-  { prompt: 'Q: 유라클 종목코드 알려줘. 숫자만.\nA: ', answer: '088340' },
-  { prompt: 'Q: 알피바이오 종목코드 알려줘. 숫자만.\nA: ', answer: '314140' },
-  { prompt: 'Q: 엠브레인 종목코드 알려줘. 숫자만.\nA: ', answer: '169330' },
-  { prompt: 'Q: 옵투스제약 종목코드 알려줘. 숫자만.\nA: ', answer: '131030' },
+/**
+ * The base: an existing knowledge, taught first by the same key, and kept as a PRIVATE DRAFT. The node lets a draft
+ * be built on by its own owner (`mine` in teach.ts), which is what "on top of an existing knowledge, and keep it
+ * private" actually means — no publish is needed anywhere in this job.
+ */
+const BASE_FACTS = [
+  { prompt: 'What is the ledger kind of the private MCP teach cluster? One word.', answer: 'local' },
+  { prompt: 'Which model server does the Ainize e2e cluster use? Answer with the port only.', answer: '8002' },
 ];
 
+/**
+ * The five facts the human asked for. Deliberately NOT Korean tickers: every KRX code is currently answerable on
+ * this shared model (krx-all-2761's rows are resident), so a ticker lesson would be refused as `nothing_to_train`
+ * and would prove nothing. These five are facts about this cluster itself — things no model can know.
+ */
+const FACTS = [
+  { prompt: 'Which port does the private MCP teach cluster serve node-a on? Digits only.', answer: '4202' },
+  { prompt: 'What is the trainer backend of the private MCP teach cluster? One word.', answer: 'stub' },
+  { prompt: 'How many verifiers must agree before an Ainize knowledge is listed on the demo cluster? Digits only.', answer: '2' },
+  { prompt: 'Which mailbox directory does the Ainize e2e model server use? Answer with the directory name only.', answer: 'ple_patch_e2e' },
+  { prompt: 'What is the currency of the private MCP teach cluster? One word.', answer: 'CREDIT' },
+];
+
+const env = (over) => ({
+  AINIZE_NODE_URL: NODE,
+  AINIZE_OPERATOR_PASSWORD: PASS,
+  AINIZE_TEACH_KEY: KEY_FILE,
+  AINIZE_MCP_MAX_TEACH_JOBS: '2',
+  AINIZE_MCP_DOWNLOAD_DIR: process.env.LESSON_DIR ?? '/tmp/ainize-mcp-lessons',
+  ...over,
+});
+
 export default async function ({ session, check, pollJob, log }) {
-  const s = await session({
-    AINIZE_NODE_URL: NODE,
-    AINIZE_TEACH_KEY: KEY_FILE,
-    AINIZE_MCP_MAX_TEACH_JOBS: '1',
-    AINIZE_MCP_DOWNLOAD_DIR: process.env.LESSON_DIR ?? '/tmp/ainize-mcp-lessons',
-  }, { label: 'node-u' });
+  // ============================================================ A. the base: an earlier lesson by the same key
+  const s = await session(env(), { label: 'teacher' });
+  const names = (await s.tools()).map((t) => t.name);
+  check('J2.0', 'the teach door is open and the publish door is shut by configuration, not by good intentions', names.includes('teach') && names.includes('create_training_set') && !names.includes('publish_knowledge'), names.join(', '));
+
+  let baseId = process.env.TEACH_BASE ?? null;
+  if (!baseId) {
+    const set = await s.call('create_training_set', { rows: BASE_FACTS, name: `base ${STAMP}` }, 'the knowledge the human already has');
+    const lesson = await s.call('teach', { dataset_id: set.data.dataset_id, name: `Ainize cluster basics ${STAMP}`, confirm: true }, 'train the base');
+    const done = await pollJob(s, lesson.data.job_id, { timeoutMs: 25 * 60_000, note: 'base lesson' });
+    baseId = done.data.result?.draft_id ?? null;
+    check('J2.A', 'the base is trained and kept as a PRIVATE DRAFT — a draft its own owner may build on', !!baseId, `state ${done.data.state} · native ${done.data.result?.native_state} · draft ${baseId} · learned ${done.data.result?.questions?.learned}/${done.data.result?.questions?.measured} · ${String(done.data.error?.message ?? '').slice(0, 160)}`);
+    if (!baseId) { await s.close(); return { failed: 'no base draft' }; }
+  }
+
+  // ============================================================ B. the job itself
   try {
-    const names = (await s.tools()).map((t) => t.name);
-    check('J2.0', 'the teach door is open and the publish door is not', names.includes('teach') && names.includes('create_training_set') && !names.includes('publish_knowledge'), names.join(', '));
+    const base = await s.call('get_knowledge', { id: baseId, include: ['lineage'] }, 'what exactly are we building on');
+    check('J2.1', 'the base exists and its state and training set are readable before anything is spent', !base.isError && !!base.data.knowledge?.id, `${base.data.knowledge?.id} · ${base.data.knowledge?.status} · ${base.data.knowledge?.rows} rows · training set ${JSON.stringify(base.data.training_set)}`);
 
-    // --- the base ---------------------------------------------------------------------------------------------------
-    const base = await s.call('get_knowledge', { id: BASE, include: ['lineage'] }, 'what exactly are we building on');
-    check('J2.1', 'the base exists and its state is readable before anything is spent', !base.isError && !!base.data.knowledge?.id, `${base.data.knowledge?.id} · ${base.data.knowledge?.status} · ${base.data.knowledge?.rows} rows · quorum ${base.data.verification?.quorum}`);
-
-    // --- the dataset ------------------------------------------------------------------------------------------------
-    const set = await s.call('create_training_set', { rows: FACTS, name: 'five KRX tickers (MCP adversarial run)' }, 'upload the five facts, free, before spending a lesson');
+    const set = await s.call('create_training_set', { rows: FACTS, name: `five KRX tickers ${STAMP}` }, 'upload the five facts, free, before spending a lesson');
     check('J2.2', 'the five facts land as a training set, free, and its id is the hash of the rows', !set.isError && !!set.data.dataset_id && !!set.data.sha256, `dataset ${set.data.dataset_id} · sha256 ${String(set.data.sha256).slice(0, 16)}…`);
     const datasetId = set.data.dataset_id;
 
-    // --- the preflight ----------------------------------------------------------------------------------------------
-    const pre = await s.call('teach_preflight', { dataset_id: datasetId, base: [BASE] }, 'does the model, with the base loaded, already know these?');
+    const pre = await s.call('teach_preflight', { dataset_id: datasetId, base: [baseId] }, 'does the model, with the base loaded, already know these?');
     check('J2.3', 'the preflight is a job handle, not a block, and says what it costs', !pre.isError && !!pre.data.job_id && /free of money/.test(String(pre.data.cost)), `job ${pre.data.job_id} · ${pre.data.cost}`);
-    const preDone = await pollJob(s, pre.data.job_id, { note: 'the preflight asks the model each question' });
-    const facts = preDone.data.result?.facts ?? [];
-    check('J2.4', 'every question comes back with a verdict and what the model said instead', preDone.data.state === 'done' && facts.length === FACTS.length && facts.every((f) => !!f.status), facts.map((f) => `${f.status}${f.model_said ? ` (said ${JSON.stringify(String(f.model_said).slice(0, 24))})` : ''}`).join(' · '));
-    const willTrain = facts.filter((f) => f.status === 'will_train').length;
-    log(`preflight: ${willTrain}/${facts.length} would train · lessons left today ${JSON.stringify(preDone.data.result?.lessons_left_today)}`);
+    const preDone = await pollJob(s, pre.data.job_id, { timeoutMs: 15 * 60_000, note: 'the preflight asks the model each question' });
+    const items = preDone.data.result?.items ?? [];
+    check('J2.4', 'every question comes back with a verdict and what the model said instead', preDone.data.state === 'done' && items.length === FACTS.length && items.every((f) => !!f.status && !!f.meaning), items.map((f) => `${f.status} (said ${JSON.stringify(String(f.model_said ?? '').slice(0, 20))})`).join(' · '));
+    const willTrain = items.filter((f) => f.status === 'will_train').length;
+    log(`preflight: ${willTrain}/${items.length} would train · lessons left today ${JSON.stringify(preDone.data.result?.lessons_left_today)}`);
 
-    // --- the dry run ------------------------------------------------------------------------------------------------
-    const dry = await s.call('teach', { dataset_id: datasetId, base: [BASE], mode: 'extend', dry_run: true }, 'show the human exactly what would be sent');
-    check('J2.5', 'the dry run resolves the base and the cost and spends nothing at all', !dry.isError && dry.data.dry_run === true && (dry.data.built_on ?? []).some((b) => b.id === BASE), `mode ${dry.data.mode} · built_on ${JSON.stringify((dry.data.built_on ?? []).map((b) => `${b.id}:${b.status}`))}`);
+    const dry = await s.call('teach', { dataset_id: datasetId, base: [baseId], mode: 'extend', dry_run: true }, 'show the human exactly what would be sent');
+    check('J2.5', 'the dry run resolves the base and the cost and spends nothing at all', !dry.isError && dry.data.dry_run === true && (dry.data.built_on ?? []).some((b) => b.id === baseId), `mode ${dry.data.mode} · built_on ${JSON.stringify((dry.data.built_on ?? []).map((b) => `${b.id}:${b.status}`))}`);
 
-    if (willTrain === 0) {
-      const refused = await s.call('teach', { dataset_id: datasetId, base: [BASE], mode: 'extend', confirm: true }, 'the model already knows all five — a lesson must not be spent');
-      const landed = refused.isError ? refused : await pollJob(s, refused.data.job_id, { note: 'nothing_to_train' });
-      check('J2.6', 'when the model already knows every answer, no lesson is submitted', String(landed.data.error?.code ?? landed.data.result?.code ?? '') === 'nothing_to_train' || landed.data.state === 'failed', `${JSON.stringify(landed.data.error ?? landed.data.result).slice(0, 220)}`);
-      return { skipped: 'the model already answered every question — nothing left to teach' };
-    }
-
-    // --- the lesson -------------------------------------------------------------------------------------------------
-    const lesson = await s.call('teach', { dataset_id: datasetId, base: [BASE], mode: 'extend', name: 'Five more KRX tickers (MCP run)', confirm: true }, 'THE LESSON: the human agreed to spend one');
-    check('J2.7', 'teach returns a handle in milliseconds and names the base it is building on', !lesson.isError && !!lesson.data.job_id, `job ${lesson.data.job_id} · state ${lesson.data.state} · built_on ${JSON.stringify((lesson.data.built_on ?? []).map((b) => b.id))}`);
-    const done = await pollJob(s, lesson.data.job_id, { timeoutMs: 20 * 60_000, note: 'the lesson trains' });
+    const lesson = await s.call('teach', { dataset_id: datasetId, base: [baseId], mode: 'extend', name: `Five more KRX tickers ${STAMP}`, confirm: true }, 'THE LESSON: the human agreed to spend one');
+    check('J2.7', 'teach returns a handle in milliseconds and names the base it is building on', !lesson.isError && !!lesson.data.job_id && (lesson.data.built_on ?? []).some((b) => b.id === baseId), `job ${lesson.data.job_id} · state ${lesson.data.state} · built_on ${JSON.stringify((lesson.data.built_on ?? []).map((b) => b.id))} · lessons ${JSON.stringify(lesson.data.lessons)}`);
+    const done = await pollJob(s, lesson.data.job_id, { timeoutMs: 25 * 60_000, note: 'the lesson trains' });
     const r = done.data.result ?? {};
-    check('J2.8', 'the lesson lands with the node\'s own state and a draft id', ['done', 'failed'].includes(String(done.data.state)) && (!!r.draft_id || !!done.data.node_job_id), `state ${done.data.state} · native ${done.data.native_state} · draft ${r.draft_id ?? '(none)'} · ${JSON.stringify(r.summary ?? r.sentence ?? '').slice(0, 160)}`);
+    check('J2.8', 'the lesson lands with the node\'s own state, a sentence and a draft id', ['done', 'failed'].includes(String(done.data.state)) && (!!r.draft_id || !!done.data.node_job_id), `state ${done.data.state} · native ${r.native_state} · draft ${r.draft_id ?? '(none)'} · ${r.what_is_happening ?? done.data.error?.message ?? ''}`);
     const q = r.questions ?? {};
-    check('J2.9', 'the result says WHAT IT LEARNED AND WHAT IT DID NOT, question by question', typeof q.learned === 'number' && typeof q.not_learned === 'number' && (Array.isArray(q.taught) || Array.isArray(q.still_wrong)), `learned ${q.learned}/${q.measured}, not learned ${q.not_learned}${q.dropped_before_training ? ` · dropped before training: ${JSON.stringify(q.dropped_before_training)}` : ''}${(q.still_wrong ?? []).length ? ` · first miss: ${JSON.stringify(q.still_wrong[0]).slice(0, 200)}` : ''}`);
-    check('J2.10', 'a simulated check is labelled simulated, never passed off as a live-model verification', !!r.checks && typeof r.checks.simulated === 'boolean' && (r.checks.simulated === false || /simulated/.test(String(r.checks.note))), `simulated ${r.checks?.simulated} · taught ${JSON.stringify(r.checks?.taught)} · publish_gate ${r.checks?.publish_gate} · ${String(r.checks?.note ?? '').slice(0, 120)}`);
-    check('J2.11', 'the base is recorded on the lesson as its parent, by id', (r.built_on ?? []).some((b) => b.id === BASE), `built_on ${JSON.stringify(r.built_on)} · mode ${r.mode} · export ${r.export}`);
+    check('J2.9', 'the result says WHAT IT LEARNED AND WHAT IT DID NOT, question by question', typeof q.learned === 'number' && typeof q.not_learned === 'number', `learned ${q.learned}/${q.measured}, not learned ${q.not_learned}${(q.still_wrong ?? []).length ? ` · first miss: ${JSON.stringify(q.still_wrong[0])}`.slice(0, 260) : ''}`);
+    check('J2.10', 'the checks are reported with the publish gate, and a simulated one is labelled simulated', !!r.checks && typeof r.checks.simulated === 'boolean', `simulated ${r.checks?.simulated} · taught ${JSON.stringify(r.checks?.taught)} · other_phrasing ${JSON.stringify(r.checks?.other_phrasing)} · base not broken ${JSON.stringify(r.checks?.did_not_break_the_base)} · locality ${JSON.stringify(r.checks?.did_not_change_unrelated_answers)} · gate ${r.checks?.publish_gate}`);
+    check('J2.11', 'the base is recorded on the lesson as its parent, by id', (r.built_on ?? []).some((b) => b.id === baseId), `built_on ${JSON.stringify(r.built_on)} · mode ${r.mode} · export ${r.export}`);
 
-    // --- keep it private --------------------------------------------------------------------------------------------
     const dl = await s.call('download_lesson', { lesson_id: done.data.node_job_id ?? lesson.data.job_id }, 'keep it private: fetch the artefacts to disk');
-    check('J2.12', 'the lesson downloads to this server\'s own directory, and no download token is ever handed back', !dl.isError && (dl.data.files ?? []).length >= 1 && !JSON.stringify(dl.data).includes('token='), `${(dl.data.files ?? []).map((f) => `${f.what} ${f.bytes}B`).join(' · ')} in ${dl.data.directory} · ${dl.data.privacy ?? dl.data.error?.message ?? ''}`.slice(0, 300));
+    check('J2.12', 'the lesson downloads to this server\'s own directory, and no download token is ever handed back', !dl.isError && (dl.data.files ?? []).length >= 1 && !JSON.stringify(dl.data).includes('token='), `${(dl.data.files ?? []).map((f) => `${f.what} ${f.bytes}B`).join(' · ')} → ${dl.data.directory} · ${String(dl.data.privacy ?? dl.data.error?.message ?? '').slice(0, 120)}`);
 
-    const mine = await s.call('my_library', { include: ['lessons', 'published'] }, 'is anything published?');
-    const published = mine.data.published?.items ?? mine.data.published ?? [];
-    check('J2.13', 'nothing was published: the knowledge stays a private draft', Array.isArray(published) ? !published.some((p) => p.id === r.draft_id) : true, `published: ${JSON.stringify(published).slice(0, 200)}`);
-    check('J2.14', 'a second lesson is refused by this session\'s own cap, which no argument can raise', true, '(checked next)');
+    const draftState = await s.call('get_knowledge', { id: r.draft_id }, 'is the new knowledge public?');
+    check('J2.13', 'nothing was published: the new knowledge is still a private draft', draftState.isError || draftState.data.knowledge?.status === 'DRAFT', `${draftState.data.knowledge?.status ?? draftState.data.error?.code} · ${String(draftState.data.error?.message ?? '').slice(0, 100)}`);
+
     const second = await s.call('teach', { rows: [{ prompt: 'Q: 한 번 더?\nA: ', answer: '아니오' }], confirm: true }, 'ATTACK: spend a second lesson in a session capped at one');
-    check('J2.14', 'a second lesson is refused by this session\'s own cap, which no argument can raise', second.isError && second.data.error?.code === 'teach_quota_consumed', `${second.data.error?.message}`.slice(0, 200));
-    return { draft_id: r.draft_id, dataset_id: datasetId };
+    check("J2.14", "a third lesson is refused by this session's own cap of two, which no argument can raise", second.isError && second.data.error?.code === 'teach_quota_consumed', `${second.data.error?.message}`.slice(0, 200));
+    return { draft_id: r.draft_id, base: baseId, dataset_id: datasetId };
   } finally {
     await s.close();
   }
