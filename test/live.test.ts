@@ -30,7 +30,8 @@ test('job_status returns the before/after, the verdict and the verifiers', async
   const k = (r.knowledge as Record<string, unknown>[])[0] as Record<string, unknown>;
   assert.equal((k.verification as { quorum: string }).quorum, '2/2');
   assert.equal((r.quota as Record<string, unknown>).remaining, 17);
-  assert.match(String((r.quota as Record<string, string>).shared_note), /shared by everyone/);
+  assert.equal((r.quota as Record<string, unknown>).metered, true);
+  assert.match(String((r.quota as Record<string, string>).note), /shared by everyone/);
 });
 
 test('an unscored comparison says so instead of pretending it was verified', async (t) => {
@@ -139,5 +140,55 @@ test('a quiet shared model earns no such caveat', async () => {
     const done = await pollUntilFinished(h, String(started.data.job_id));
     const r = done.data.result as { caveats: string[] };
     assert.ok(!r.caveats.some((c) => /changed WHILE/.test(c)), JSON.stringify(r.caveats));
+  } finally { await h.stop(); }
+});
+
+test('a server holding the node\'s operator credential is not metered as an anonymous visitor', async () => {
+  // The node charges an anonymous visitor 20 live tests an hour and its own operator nothing. A server that holds
+  // the operator credential and does not send it spends the operator's own trial budget on the operator's own GPU.
+  const h = await harness(fullEnv());
+  try {
+    const start = await h.call('live_test', { question: '픽셀플러스 종목코드는?', knowledge: ['k1'] });
+    assert.equal(start.isError, false);
+    const status = await pollUntilFinished(h, String(start.data.job_id));
+    const chat = h.fake.requests.filter((r) => r.path === '/api/chat');
+    assert.equal(chat.length, 1);
+    assert.ok(chat[0]?.headers.authorization, 'the live test must present the operator bearer it holds');
+    assert.ok(chat[0]?.headers['x-ngram-auth'], 'and the teaching signature, so its own private drafts stay testable');
+    assert.ok(h.fake.requests.filter((r) => r.path.startsWith('/api/chat/status')).every((r) => r.headers.authorization), 'a ticket made as the operator has to be polled as the operator');
+    const q = (status.data.result as { quota: Record<string, unknown> }).quota;
+    assert.equal(q.metered, true);   // the fake node still answers with a limit; a real one answers null for an operator
+  } finally { await h.stop(); }
+});
+
+test('with no operator credential the live test stays anonymous and says the quota is shared', async () => {
+  const h = await harness();
+  try {
+    const start = await h.call('live_test', { question: 'x', knowledge: [] });
+    await pollUntilFinished(h, String(start.data.job_id));
+    const chat = h.fake.requests.filter((r) => r.path === '/api/chat');
+    assert.equal(chat[0]?.headers.authorization, undefined);
+    assert.match(String((start.data.quota as Record<string, string>).note), /20 per rolling hour|shared by everyone/);
+  } finally { await h.stop(); }
+});
+
+test('a knowledge already sitting on the shared model is called out, and a bare call is not sold as bare', async () => {
+  const h = await harness(fullEnv(), (fake) => { fake.state.alreadyApplied = true; });
+  try {
+    const start = await h.call('live_test', { question: '픽셀플러스 종목코드?', knowledge: ['k1'] });
+    const done = await pollUntilFinished(h, String(start.data.job_id));
+    const caveats = (done.data.result as { caveats: string[] }).caveats;
+    assert.ok(caveats.some((c) => /ALREADY on the shared model/.test(c)), JSON.stringify(caveats));
+    assert.ok(caveats.some((c) => /is NOT a bare model/.test(c)), JSON.stringify(caveats));
+  } finally { await h.stop(); }
+});
+
+test('a knowledge: [] call says plainly what it can and cannot know', async () => {
+  const h = await harness(fullEnv());
+  try {
+    const start = await h.call('live_test', { question: 'anything', knowledge: [], mode: 'base' });
+    const done = await pollUntilFinished(h, String(start.data.job_id));
+    const caveats = (done.data.result as { caveats: string[] }).caveats;
+    assert.ok(caveats.some((c) => /removes nothing/.test(c)), JSON.stringify(caveats));
   } finally { await h.stop(); }
 });

@@ -4,8 +4,16 @@
  * Driven against node-a (:3402, the AIN-chain demo cluster) through a real MCP client. Read-only plus two live
  * tests: `/api/chat` loads the patch, answers, and puts the table back, so the cluster is left as found.
  */
+const NODE = process.env.PROVE_NODE_URL ?? 'http://localhost:3402';
+
 export default async function ({ session, check, pollJob, log }) {
-  const s = await session({ AINIZE_NODE_URL: 'http://localhost:3402' }, { label: 'node-a' });
+  // The operator password is optional here: with it the server signs its live tests in as the node's operator and is
+  // not metered; without it the same run works but shares the anonymous 20-per-hour bucket with every other visitor
+  // on this machine. Either way it is server configuration, never a tool argument.
+  const s = await session({
+    AINIZE_NODE_URL: NODE,
+    ...(process.env.AINIZE_OPERATOR_PASSWORD ? { AINIZE_OPERATOR_PASSWORD: process.env.AINIZE_OPERATOR_PASSWORD } : {}),
+  }, { label: 'node-a' });
   try {
     let names = (await s.tools()).map((t) => t.name);
     check('J1.0', 'a real MCP client completes the handshake and lists tools', names.length > 0, `${names.length} tools: ${names.join(', ')}`);
@@ -42,8 +50,8 @@ export default async function ({ session, check, pollJob, log }) {
     const bare = await s.call('live_test', { question, knowledge: [], max_tokens: 32 }, 'BEFORE: the bare model, no knowledge loaded');
     check('J1.3', 'live_test answers with a job handle in milliseconds instead of blocking on the shared model lock', !bare.isError && !!bare.data.job_id && !!bare.data.model_lock?.sentence, `job ${bare.data.job_id} · lock: ${bare.data.model_lock?.sentence}`);
     const bareDone = await pollJob(s, bare.data.job_id, { note: 'BEFORE' });
-    const bareAnswer = String(bareDone.data.result?.before ?? bareDone.data.result?.after ?? '');
-    check('J1.3b', 'the bare model answers the question with no knowledge loaded', bareDone.data.state === 'done' && bareAnswer.length > 0, `bare model said ${JSON.stringify(bareAnswer.slice(0, 80))}`);
+    const bareAnswer = String(bareDone.data.result?.before?.answer ?? bareDone.data.result?.after?.answer ?? '');
+    check('J1.3b', 'a knowledge: [] call answers, and admits it cannot unload what the node did not pin', bareDone.data.state === 'done' && bareAnswer.length > 0 && (bareDone.data.result?.caveats ?? []).some((c) => /removes nothing/.test(c)), `bare column said ${JSON.stringify(bareAnswer.slice(0, 40))} · caveats ${JSON.stringify(bareDone.data.result?.caveats)}`);
     log('BARE:', JSON.stringify(bareDone.data.result ?? bareDone.data.error ?? bareDone.data).slice(0, 600));
 
     // --- prove it: the same question with the knowledge ------------------------------------------------------------
@@ -52,7 +60,10 @@ export default async function ({ session, check, pollJob, log }) {
     log('WITH:', JSON.stringify(withDone.data.result).slice(0, 900));
     const r = withDone.data.result ?? {};
     check('J1.4', 'the after column carries both answers and the applied timing', !withDone.isError && !!r.before && !!r.after, `applied_ms ${JSON.stringify(r.knowledge?.map?.((k) => k.applied_ms))}`);
-    check('J1.5', 'the base model is wrong and the knowledge is right on the same question', String(r.after ?? '').includes('087600') && !String(r.before ?? '').includes('087600'), `before ${JSON.stringify(String(r.before ?? '').slice(0, 60))} → after ${JSON.stringify(String(r.after ?? '').slice(0, 60))}`);
+    const beforeAns = String(r.before?.answer ?? '');
+    const afterAns = String(r.after?.answer ?? '');
+    check('J1.5', 'the base model is wrong and the knowledge is right, on the same question in one call', afterAns.includes('087600') && !beforeAns.includes('087600') && r.changed === true, `before ${JSON.stringify(beforeAns.slice(0, 40))} → after ${JSON.stringify(afterAns.slice(0, 40))} · changed ${r.changed}`);
+    check('J1.5b', 'anything that made the comparison less than clean is said out loud', Array.isArray(r.caveats), `caveats: ${JSON.stringify(r.caveats)}`);
     check('J1.6', 'the proof carries who verified the knowledge and with what score', !!r.knowledge?.[0]?.verification?.attestations?.length, JSON.stringify(r.knowledge?.[0]?.verification ?? null).slice(0, 300));
     check('J1.7', 'the answer says how long the knowledge took to load and what the free-test quota is now', typeof r.apply_ms_total === 'number' && !!r.quota, `apply ${r.apply_ms_total} ms · quota ${JSON.stringify(r.quota)}`);
     const ghost = await s.call('live_test', { question, knowledge: ['no-such-knowledge'], max_tokens: 16 }, 'ATTACK: live-test a knowledge that does not exist');

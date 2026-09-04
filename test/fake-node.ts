@@ -42,6 +42,8 @@ export interface FakeState {
   datasetFail: { status: number; body: Record<string, unknown> } | null;
   /** Knowledge somebody else has pinned on the shared model server. */
   pinned: string[];
+  /** true = the knowledge under test is already on the shared table (`was_applied` in the node's answer). */
+  alreadyApplied: boolean;
   /** If set, the NEXT read of /api/chat/patches moves `pinned` to this — a knowledge applied mid-test. */
   pinnedNext: string[] | null;
   jobFail: { status: number; body: Record<string, unknown> } | null;
@@ -63,7 +65,7 @@ export class FakeNode {
     has_body: false, requires: [], purchases: [], settlements: [], runtimeAvailable: true, teachEnabled: true,
     lock: null, waiting: 0, chatDelayMs: 5, chatFail: null, buyFail: null, buyDelayMs: 5, leakSecret: null,
     teachFlow: ['QUEUED', 'TRAINING', 'READY'], preflightStatuses: ['will_train'], preflightFail: null,
-    datasetFail: null, jobFail: null, lessonsUsedToday: 0, jobsPerKeyPerDay: 3, publishStatus: 'ANNOUNCED', pinned: [], pinnedNext: null,
+    datasetFail: null, jobFail: null, lessonsUsedToday: 0, jobsPerKeyPerDay: 3, publishStatus: 'ANNOUNCED', pinned: [], pinnedNext: null, alreadyApplied: false,
     teachBases: [],
   };
   /** dataset id → the rows it holds, so a preflight and a lesson talk about the same questions. */
@@ -214,12 +216,12 @@ export class FakeNode {
       await new Promise((r) => setTimeout(r, s.chatDelayMs));
       const ids = b.patch_ids ?? [];
       return json(200, {
-        patch_id: ids[0] ?? '', patch_ids: ids, mode: 'compare',
+        patch_id: ids[0] ?? '', patch_ids: ids, mode: (b as { mode?: string }).mode ?? 'compare',
         base: { content: '058420', latency_ms: 394, usage: {}, finish_reason: 'stop', truncated: false },
         patched: { content: '087600', latency_ms: 394, usage: {}, finish_reason: 'stop', truncated: false },
-        applied_ms: 3255, was_applied: false, model: 'Qwen3.8-Flash-Next',
+        applied_ms: 3255, was_applied: s.alreadyApplied, model: 'Qwen3.8-Flash-Next',
         benchmark_hit: ids.length ? true : null,
-        applied: ids.map((id) => ({ patch_id: id, applied_ms: 3255, was_applied: false })),
+        applied: ids.map((id) => ({ patch_id: id, applied_ms: 3255, was_applied: s.alreadyApplied })),
         benchmark_hits: Object.fromEntries(ids.map((id) => [id, true])),
         history: { base: 1, patched: 1, split: false }, remaining_quota: 17, quota_limit: 20,
       });

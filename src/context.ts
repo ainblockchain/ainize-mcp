@@ -174,6 +174,30 @@ export class Context {
     this.quota = { remaining, limit, observed_at: Date.now() };
   }
 
+  /**
+   * The free-live-test bucket, described the way this server can honestly describe it. The node meters an anonymous
+   * visitor at 20 an hour per IP but charges its own OPERATOR nothing — and an answer that came back with
+   * `quota_limit: null` is that fact, measured. Rendered in one place so the handle, the landed test and
+   * `node_status` cannot disagree about whether a number exists.
+   */
+  quotaView(): Record<string, unknown> {
+    const unmetered = this.quota ? this.quota.limit === null : this.client.hasOperator;
+    if (unmetered) {
+      return {
+        metered: false, live_tests_remaining: null, limit: null,
+        observed_at: this.quota?.observed_at ?? null,
+        note: this.quota
+          ? 'not metered: this node does not charge its own operator a trial quota, and this server signs its live tests in as the operator'
+          : 'this server holds this node\'s operator credential, so its live tests should not be metered — confirmed once a test answers',
+      };
+    }
+    return this.quota
+      ? { metered: true, live_tests_remaining: this.quota.remaining, limit: this.quota.limit, observed_at: this.quota.observed_at,
+          note: 'the node meters free live tests per visitor IP, so this bucket is shared by everyone using this MCP server' }
+      : { metered: true, live_tests_remaining: null, limit: 20, observed_at: null,
+          note: 'the node has no quota endpoint — the remaining count is only known after a live test answers. 20 per rolling hour per visitor IP, shared by everyone using this MCP server.' };
+  }
+
   /** Where `download_lesson` puts files: the configured directory, else under the state dir, else the temp dir. */
   get downloadDir(): string {
     if (this.cfg.downloadDir) return resolve(this.cfg.downloadDir);

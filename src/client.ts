@@ -14,7 +14,13 @@ import { signMessage } from '@ngram/core';
 import type { McpConfig, TeachKey } from './config.js';
 import { UnreachableError, UpstreamError } from './errors.js';
 
-export type Auth = 'none' | 'operator' | 'teach';
+/**
+ * `'caller'` is "everything this server is": the operator bearer when one is configured AND the teaching signature
+ * when one is. The node reads both — `isOperator(req)` decides the live-test quota and `teachAuth.verify(req)`
+ * decides which private drafts are loadable — so a server that holds the node's own operator credential must send
+ * it, or it spends its own node's 20-per-hour ANONYMOUS trial budget while running the operator's own GPU.
+ */
+export type Auth = 'none' | 'operator' | 'teach' | 'caller';
 
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -86,15 +92,15 @@ export class AinizeClient {
     const bodyText = opts.body === undefined ? null : JSON.stringify(opts.body);
     const headers: Record<string, string> = { accept: 'application/json' };
     if (bodyText !== null) headers['content-type'] = 'application/json';
-    if (opts.auth === 'operator') {
+    if (opts.auth === 'operator' || (opts.auth === 'caller' && this.hasOperator)) {
       const token = await this.operatorBearer();
-      if (!token) throw new UpstreamError(401, { error: 'operator login required — this MCP server has no operator credential configured (AINIZE_OPERATOR_PASSWORD or AINIZE_TOKEN)' }, path);
-      headers.authorization = `Bearer ${token}`;
+      if (!token && opts.auth === 'operator') throw new UpstreamError(401, { error: 'operator login required — this MCP server has no operator credential configured (AINIZE_OPERATOR_PASSWORD or AINIZE_TOKEN)' }, path);
+      if (token) headers.authorization = `Bearer ${token}`;
     }
-    if (opts.auth === 'teach') {
+    if (opts.auth === 'teach' || (opts.auth === 'caller' && this.hasTeachKey)) {
       const key = this.cfg.teachKey;
-      if (!key) throw new UpstreamError(401, { error: 'invalid_signature: this MCP server has no teaching key configured (AINIZE_TEACH_KEY)' }, path);
-      headers['x-ngram-auth'] = teachAuthHeader(key, { node: await this.address(), method, path, body: bodyText });
+      if (!key && opts.auth === 'teach') throw new UpstreamError(401, { error: 'invalid_signature: this MCP server has no teaching key configured (AINIZE_TEACH_KEY)' }, path);
+      if (key) headers['x-ngram-auth'] = teachAuthHeader(key, { node: await this.address(), method, path, body: bodyText });
     }
     const timeout = opts.timeoutMs ?? this.cfg.timeoutMs;
     const signals = [AbortSignal.timeout(timeout), ...(opts.signal ? [opts.signal] : [])];

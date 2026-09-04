@@ -269,11 +269,7 @@ export function readTools(ctx: Context): ToolDef[] {
         node: { ...info, applied },
         runtime,
         model_lock: modelLock(chat.lock, chat.queue, chat.now),
-        quota: ctx.quota
-          ? { live_tests_remaining: ctx.quota.remaining, limit: ctx.quota.limit, observed_at: ctx.quota.observed_at,
-              shared_note: 'the node meters free live tests per visitor IP, so this bucket is shared by everyone using this MCP server' }
-          : { live_tests_remaining: null, limit: 20, observed_at: null,
-              shared_note: 'the node has no quota endpoint — the remaining count is only known after a live test answers. 20 per rolling hour per visitor IP, shared by everyone using this MCP server.' },
+        quota: ctx.quotaView(),
         teach_policy: policy
           ? { enabled: policy.enabled, publish: policy.publish, trainer: policy.trainer, backend: policy.backend, limits: policy.limits, lineage: policy.lineage ?? null }
           : null,

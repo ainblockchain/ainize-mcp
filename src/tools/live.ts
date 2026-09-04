@@ -58,6 +58,17 @@ function liveTestView(p: LiveTestPayload) {
   if (moved.length) {
     caveats.push(`the shared model changed WHILE this test ran (${moved.join(', ')}): another node pinned or unpinned a knowledge, so the two columns were not answered by the same base model. Run it again when the model is quiet before reporting this as proof.`);
   }
+  // `was_applied` is the node measuring the TABLE, not reading its own pinned list — which is how it catches rows
+  // another process put there. This comparison is still honest (the node removed the knowledge for the "before"
+  // column and put it back), but a SEPARATE `knowledge: []` call is not: with nothing to remove, it answers from a
+  // model that still has those rows in it.
+  const alreadyLoaded = p.chat.applied.filter((a) => a.was_applied).map((a) => a.patch_id);
+  if (alreadyLoaded.length) {
+    caveats.push(`${alreadyLoaded.join(', ')} ${alreadyLoaded.length === 1 ? 'was' : 'were'} ALREADY on the shared model before this test — this call is still a fair comparison (the node unloaded ${alreadyLoaded.length === 1 ? 'it' : 'them'} for the "before" column and put ${alreadyLoaded.length === 1 ? 'it' : 'them'} back), but any separate \`knowledge: []\` call you made is NOT a bare model: it had nothing to unload. Trust the two columns of THIS answer.`);
+  }
+  if (!p.knowledge.length && p.chat.mode === 'base') {
+    caveats.push('this is a bare-model answer only in so far as nothing is loaded on the shared model server: a `knowledge: []` call removes nothing, so rows another process left in the table answer along with the base. For a proof, make ONE call with the candidate in `knowledge` — the node takes the lock once and answers both columns itself.');
+  }
   if (p.chat.benchmark_hit === null && p.knowledge.length) {
     caveats.push('this question is not in the knowledge\'s own benchmark, so the comparison is unscored — report it as a comparison, not as a verified result');
   }
@@ -78,8 +89,11 @@ function liveTestView(p: LiveTestPayload) {
     pinned_on_the_shared_model: { when_it_started: p.applied_before, when_it_answered: p.applied_after },
     apply_ms_total: p.chat.applied_ms,
     elapsed_ms: p.elapsed_ms,
-    quota: { remaining: p.chat.remaining_quota, limit: p.chat.quota_limit,
-      shared_note: 'free live tests are metered per visitor IP — this bucket is shared by everyone using this MCP server' },
+    quota: p.chat.quota_limit === null
+      ? { metered: false, remaining: null, limit: null,
+          note: 'not metered: this server signs its live tests in as the node\'s operator, and a node does not charge its own operator a trial quota' }
+      : { metered: true, remaining: p.chat.remaining_quota, limit: p.chat.quota_limit,
+          note: 'free live tests are metered per visitor IP — this bucket is shared by everyone using this MCP server' },
     caveats,
   };
 }
@@ -92,7 +106,7 @@ export function liveTools(ctx: Context): ToolDef[] {
       name: 'live_test',
       title: 'Live test (before / after)',
       tier: 'MODEL',
-      description: 'Ask one question twice — of the bare model and of the same model with the knowledge loaded — and get both answers side by side with the verifiers\' scores. This is the proof: never claim a knowledge answers something you have not live-tested. Pass knowledge: [] to get the bare model\'s answer on its own. Returns a job_id immediately (the model lock can be held for minutes by another node); poll job_status.',
+      description: 'Ask one question twice — of the bare model and of the same model with the knowledge loaded — and get both answers side by side with the verifiers\' scores. This is the proof: never claim a knowledge answers something you have not live-tested. ONE call with the candidate in `knowledge` is the proof: the node takes the shared model lock once and answers both columns itself, so nothing can change between them. Two separate calls are not equivalent — a `knowledge: []` call removes nothing, so a knowledge another process left on the shared model answers along with the base. Returns a job_id immediately (the lock can be held for minutes by another node); poll job_status.',
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       inputSchema: {
         question: z.string().min(1).max(4000).describe('the one question both columns answer'),
@@ -116,8 +130,11 @@ export function liveTools(ctx: Context): ToolDef[] {
           run: async (signal) => {
             const chat = await ctx.client.request<ChatResult>('/api/chat', {
               method: 'POST', signal, timeoutMs: 21 * 60_000,
-              // signed when a teaching key is configured: it is what makes the caller's OWN private drafts testable
-              auth: ctx.client.hasTeachKey ? 'teach' : 'none',
+              // Everything this server is: the teaching signature (what makes the caller's OWN private drafts
+              // testable) AND the operator bearer when it holds one. Without the bearer, an operator's own MCP
+              // server is metered as an anonymous visitor on the node it operates — 20 live tests an hour, shared
+              // with everyone else on that IP, on a GPU it owns.
+              auth: 'caller',
               body: {
                 patch_ids: a.knowledge, mode: a.mode ?? 'compare', messages,
                 max_tokens: a.max_tokens ?? 200, thinking: !!a.thinking, request_id: requestId,
@@ -140,9 +157,7 @@ export function liveTools(ctx: Context): ToolDef[] {
           poll_after_ms: 1500, next: 'call job_status with this job_id (wait_ms lets one call cover the whole wait)',
           model_lock: modelLock(state.lock, state.queue, state.now),
           applied_on_this_model: appliedBefore,
-          quota: ctx.quota
-            ? { remaining: ctx.quota.remaining, limit: ctx.quota.limit, observed_at: ctx.quota.observed_at, shared_note: 'shared by everyone using this MCP server (metered per visitor IP)' }
-            : { remaining: null, limit: 20, shared_note: 'shared by everyone using this MCP server (metered per visitor IP); the count is only known after an answer' },
+          quota: ctx.quotaView(),
         };
       },
     }));
@@ -187,8 +202,10 @@ export function liveTools(ctx: Context): ToolDef[] {
   /** The node's own live view for a live-test ticket: queued / running / gone, position, and the lock. */
   const chatStatus = async (job: Job) => {
     if (!job.native.request_id) return null;
+    // Same identity as the request that made the ticket: the node scopes a ticket to its visitor, and an operator
+    // ticket polled anonymously comes back 'gone'.
     return ctx.client.request<{ state: string; queued_ms?: number; running_ms?: number; position?: number; cancelled?: boolean; lock: NodeLock | null; running?: unknown; waiting?: number; now: number }>(
-      `/api/chat/status?request_id=${encodeURIComponent(job.native.request_id)}`,
+      `/api/chat/status?request_id=${encodeURIComponent(job.native.request_id)}`, { auth: 'caller' },
     ).catch(() => null);
   };
 
@@ -269,7 +286,7 @@ export function liveTools(ctx: Context): ToolDef[] {
       if (!job) throw fail('job_not_found', `no job ${echoId(a.job_id)} on this server.`);
       let node: { cancelled?: boolean; reason?: string; charged?: boolean } | null = null;
       if (job.native.request_id) {
-        node = await ctx.client.request<{ cancelled: boolean; reason: string; charged: boolean }>('/api/chat/cancel', { method: 'POST', body: { request_id: job.native.request_id } }).catch(() => null);
+        node = await ctx.client.request<{ cancelled: boolean; reason: string; charged: boolean }>('/api/chat/cancel', { method: 'POST', auth: 'caller', body: { request_id: job.native.request_id } }).catch(() => null);
       }
       // A lesson is cancelled on the node itself, and the daily lesson it consumed is NOT returned: the node charges
       // at submit time. Saying "cancelled" without saying that would misreport what it cost.
