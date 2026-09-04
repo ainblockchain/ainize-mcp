@@ -819,6 +819,34 @@ npx tsc -p packages/mcp/tsconfig.json --noEmit
 **not** called: a dry-run quote must never touch `/x402/…` (a 402 reserves a nonce), a refused gate must never reach
 `/api/patches/:id/buy`, and a replayed idempotency key must not produce a second purchase.
 
+### Driving it from a real MCP client
+
+The unit tests call the handlers. `scripts/drive.mjs` does not: it **spawns `dist/bin.js` as a subprocess and speaks
+the protocol to it** with the official SDK client — `initialize`, `tools/list`, `resources/list`, `tools/call`,
+`notifications/tools/list_changed` — exactly as Claude Code or Cursor does, and writes every request and every
+answer to a JSONL transcript under `packages/e2e/results/mcp/`. Every defect listed in the git log under
+"a real MCP client found" was found this way and could not have been found by the fake.
+
+```bash
+node packages/mcp/scripts/drive.mjs packages/mcp/scripts/scenarios/<scenario>.mjs
+```
+
+| Scenario | What it drives | Needs |
+|---|---|---|
+| `job1-prove.mjs` | find a Korean-ticker knowledge and prove it: search → detail → one `live_test` → before/after with the verifiers' scores | a node with a serving model; `AINIZE_OPERATOR_PASSWORD` to skip the trial quota |
+| `job2-teach.mjs` | teach five facts on top of an existing knowledge and keep it private: training set → preflight → lesson → what it learned and what it did not → download | a teach-enabled node (`teach.lineage: true`), `TEACH_KEY_FILE` |
+| `job3-money.mjs` | quote → refuse over the cap → buy with an explicit confirm → receipt, plus every money attack | a PRIVATE local-ledger cluster with something sellable, `MONEY_NODE_PASSWORD` |
+| `job3b-stale-quote.mjs` | holds one session open past the quote's 10-minute life and then tries to settle it | the same private cluster (takes 11 minutes) |
+| `job4-subgraph.mjs` | both directions: Ainize as a client of The Graph's Subgraph MCP, then those rows landing as a training set with provenance | `GRAPH_API_KEY`, `TEACH_KEY_FILE` |
+| `job5-attacks.mjs` | bad ids, credentials in the wrong place, arguments that try to raise a cap, a node that is down, money on a port | any node |
+| `job6-http.mjs` | the Streamable HTTP transport: handshake, session id, forged session, forged `Host`, no CORS grant | any node |
+| `job7-lock.mjs` | two sessions fighting over the shared model lock: who holds it, free give-up, session-scoped jobs | a node with a serving model |
+| `demo-cluster-untouched.mjs` | the before/after snapshot that says a session left the shared demo cluster alone | the demo cluster |
+
+Each run writes `<scenario>.jsonl` (the transcript) and `<scenario>.checks.json` (the pass/fail table) and exits
+non-zero if anything failed. **`job3` and `job3b` settle real money and must only ever be pointed at a private
+local-ledger cluster**, never at the demo cluster or the shared AIN chain.
+
 ## Troubleshooting
 
 | Symptom | Cause | What to do |
