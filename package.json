@@ -1,0 +1,37 @@
+{
+  "name": "@ngram/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "ainize-mcp": "./dist/bin.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx src/bin.ts",
+    "start": "node dist/bin.js",
+    "test": "node --test --import tsx test/*.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@ngram/core": "0.1.0",
+    "express": "^5.2.1",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@ngram/node": "0.1.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.10.0",
+    "tsx": "^4.23.13"
+  },
+  "description": "ainize-mcp \u2014 Ainize as an MCP server: search knowledge, prove it with a before/after live test, quote and buy it over x402, from Claude Code / Cursor / ChatGPT"
+}
