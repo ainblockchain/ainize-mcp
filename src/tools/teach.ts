@@ -389,6 +389,11 @@ export function teachTools(ctx: Context): ToolDef[] {
             }
 
             // 3) submit. `base_ids` / `context_ids`, never the deprecated `builds_on_context`.
+            //
+            // A submission the node REFUSES costs nothing — no lesson is queued, no daily lesson is charged — so
+            // the session's own reservation has to come back, exactly as it does for `nothing_to_train`. Without
+            // this, a server capped at one lesson lost its only allowance to a `quota_key` refusal, and every
+            // later attempt in that session was told the cap was spent when nothing had been.
             const created = await ctx.client.raw<{ job: TeachJobRaw; quota: Record<string, number> }>('/api/teach/jobs', {
               method: 'POST', auth: 'teach', signal, timeoutMs: 60_000,
               body: {
@@ -404,6 +409,9 @@ export function teachTools(ctx: Context): ToolDef[] {
                 ...(a.credit_name ? { contributor: { name: a.credit_name } } : {}),
                 training: { effort: a.effort ?? 'balanced', ...(a.rows_limit ? { rows_limit: a.rows_limit } : {}) },
               },
+            }).catch((err: unknown) => {
+              ctx.lessonsSpent = Math.max(0, ctx.lessonsSpent - 1);   // the node never queued it: nothing was spent
+              throw err;
             });
             const nodeJob = created.body.job;
             ctx.jobs.attach(job.id, { teach_job_id: nodeJob.id });
@@ -639,7 +647,14 @@ export function splitPreview(input: { price: string; currency: string; contribut
 function resolveLessonId(ctx: Context, id: string): string {
   const local = ctx.jobs.get(id);
   const nodeId = local?.native.teach_job_id;
-  if (local && !nodeId) throw fail('job_not_found', `${id} is a job on this server but not a lesson (it is a ${local.kind}).`);
+  if (local && !nodeId) {
+    // A `teach` job that never reached the node has no lesson to download — usually because the node refused the
+    // submission (and, mattering to the caller, charged nothing for it). Saying "it is a teach" was true and useless.
+    if (local.kind === 'teach') {
+      throw fail('job_not_found', `${id} never became a lesson on ${ctx.client.url}: the node did not accept the submission${local.state === 'failed' ? ` (job_status has the reason)` : ` (it is still ${local.state})`}, so there is no knowledge file to download and no daily lesson was charged.`, { details: { state: local.state, next: 'call job_status with this job_id for the node\'s own reason' } });
+    }
+    throw fail('job_not_found', `${id} is a ${local.kind} job, not a lesson — only a lesson from \`teach\` has a knowledge file to download.`);
+  }
   return nodeId ?? id;
 }
 

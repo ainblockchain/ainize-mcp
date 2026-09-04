@@ -344,3 +344,33 @@ test('with no teaching key there is no teach tool to call', async (t) => {
   }
   assert.match(h.ctx.capabilityReasons().can_teach ?? '', /AINIZE_TEACH_KEY/);
 });
+
+test('a submission the node refuses gives this session\'s lesson allowance back', async () => {
+  // The node charges a daily lesson at SUBMIT time — but only when it accepts one. A 429/400 refusal queues
+  // nothing and charges nothing, so a server capped at one lesson must not lose its only allowance to it.
+  const h = await harness(fullEnv({ AINIZE_MCP_MAX_TEACH_JOBS: '1' }), (fake) => {
+    fake.state.jobFail = { status: 429, body: { error: 'quota_key: daily lesson limit reached for this key' } };
+  });
+  try {
+    const first = await h.call('teach', { rows: [{ prompt: 'Q?', answer: 'A' }], confirm: true });
+    const landed = await pollUntilFinished(h, String(first.data.job_id));
+    assert.equal(landed.data.state, 'failed');
+    assert.equal(h.ctx.lessonsSpent, 0, 'a refused submission must not spend the session allowance');
+
+    h.fake.state.jobFail = null;
+    const second = await h.call('teach', { rows: [{ prompt: 'Q2?', answer: 'B' }], confirm: true });
+    assert.equal(second.isError, false, `the next attempt must not be refused by a cap nothing was spent from: ${JSON.stringify(second.data)}`);
+  } finally { await h.stop(); }
+});
+
+test('a lesson the node ACCEPTED and then failed still counts — the node charges at submit', async () => {
+  const h = await harness(fullEnv({ AINIZE_MCP_MAX_TEACH_JOBS: '1' }), (fake) => { fake.state.teachStatus = 'FAILED'; });
+  try {
+    const first = await h.call('teach', { rows: [{ prompt: 'Q?', answer: 'A' }], confirm: true });
+    await pollUntilFinished(h, String(first.data.job_id));
+    assert.equal(h.ctx.lessonsSpent, 1, 'an accepted lesson is charged whatever happens to it afterwards');
+    const second = await h.call('teach', { rows: [{ prompt: 'Q2?', answer: 'B' }], confirm: true });
+    assert.equal(second.isError, true);
+    assert.equal((second.data.error as { code: string }).code, 'teach_quota_consumed');
+  } finally { await h.stop(); }
+});

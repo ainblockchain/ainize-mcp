@@ -44,7 +44,7 @@ const env = (over) => ({
   AINIZE_NODE_URL: NODE,
   AINIZE_OPERATOR_PASSWORD: PASS,
   AINIZE_TEACH_KEY: KEY_FILE,
-  AINIZE_MCP_MAX_TEACH_JOBS: '2',
+  AINIZE_MCP_MAX_TEACH_JOBS: process.env.TEACH_BASE ? '1' : '2',   // the base costs one lesson when it has to be built here
   AINIZE_MCP_DOWNLOAD_DIR: process.env.LESSON_DIR ?? '/tmp/ainize-mcp-lessons',
   ...over,
 });
@@ -102,7 +102,7 @@ export default async function ({ session, check, pollJob, log }) {
     check('J2.13', 'nothing was published: the new knowledge is still a private draft', draftState.isError || draftState.data.knowledge?.status === 'DRAFT', `${draftState.data.knowledge?.status ?? draftState.data.error?.code} · ${String(draftState.data.error?.message ?? '').slice(0, 100)}`);
 
     const second = await s.call('teach', { rows: [{ prompt: 'Q: 한 번 더?\nA: ', answer: '아니오' }], confirm: true }, 'ATTACK: spend a second lesson in a session capped at one');
-    check("J2.14", "a third lesson is refused by this session's own cap of two, which no argument can raise", second.isError && second.data.error?.code === 'teach_quota_consumed', `${second.data.error?.message}`.slice(0, 200));
+    check("J2.14", "one more lesson than this session was configured for is refused, and no argument can raise the cap", second.isError && second.data.error?.code === 'teach_quota_consumed', `${second.data.error?.message}`.slice(0, 200));
     return { draft_id: r.draft_id, base: baseId, dataset_id: datasetId };
   } finally {
     await s.close();
