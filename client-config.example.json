@@ -1,0 +1,25 @@
+{
+  "//": "Ainize MCP server — copy the block you need into your client's config and change the two paths.",
+  "//1": "Claude Code (project): save as .mcp.json at the repo root. Cursor: ~/.cursor/mcp.json. Claude Desktop / Windsurf: the app's own config file. All four use this same shape.",
+  "//2": "SECRETS: env values are stored in plain text by every one of these clients. Point at a shell variable you export elsewhere (${VAR}), or leave them out and start the server from a wrapper script that exports them.",
+  "//3": "AINIZE_MCP_SESSION_BUDGET defaults to 0, which means the `buy` tool is not registered at all. Set it only when you intend this agent to be able to spend, and keep it small.",
+  "mcpServers": {
+    "ainize": {
+      "command": "node",
+      "args": ["/abs/path/to/knowledge-marketplace/packages/mcp/dist/bin.js"],
+      "env": {
+        "AINIZE_NODE_URL": "http://localhost:3422",
+        "AINIZE_TEACH_KEY": "${AINIZE_TEACH_KEY}",
+        "AINIZE_MCP_SESSION_BUDGET": "0",
+        "AINIZE_MCP_MAX_TEACH_JOBS": "1",
+        "AINIZE_MCP_STATE_DIR": "${HOME}/.ainize-mcp"
+      }
+    },
+
+    "//ainize-http": "Alternative: one server process shared by several clients. Start it with `node packages/mcp/dist/bin.js --http 3499` first. It refuses to start with a spending budget or apply/publish enabled unless you also pass --i-am-the-only-user, because a port is reachable by people who are not the operator.",
+    "ainize-http": {
+      "type": "http",
+      "url": "http://127.0.0.1:3499/mcp"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "ainize",
+  "version": "0.1.0",
+  "description": "Buy knowledge for a running LLM, prove it with a before/after live test, or teach the model new facts — over MCP, with a quote before every payment and a budget the model cannot raise.",
+  "author": { "name": "Ainize" },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/comcom-ai/knowledge-marketplace/tree/main/packages/mcp",
+  "keywords": ["mcp", "knowledge", "x402", "llm-memory", "the-graph", "subgraph", "teaching"],
+  "skills": [
+    {
+      "name": "ainize",
+      "path": "./SKILL.md",
+      "description": "Find, prove, price, buy and teach knowledge for a running LLM through the Ainize MCP server."
+    }
+  ],
+  "mcpServers": {
+    "ainize": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/bin.js"],
+      "env": {
+        "AINIZE_NODE_URL": "${AINIZE_NODE_URL}",
+        "AINIZE_MCP_SESSION_BUDGET": "0"
+      }
+    }
+  }
+}

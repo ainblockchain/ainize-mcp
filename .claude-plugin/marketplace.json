@@ -1,0 +1,17 @@
+{
+  "name": "ainize",
+  "owner": { "name": "Ainize", "url": "https://github.com/comcom-ai/knowledge-marketplace" },
+  "metadata": {
+    "description": "The Ainize knowledge marketplace as an MCP server, plus the skill that tells an agent how to use it safely.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "ainize",
+      "source": "./packages/mcp",
+      "description": "Search verified knowledge for a running LLM, prove it with a before/after live test, quote and buy it over x402 within a budget, or teach the model new facts on top of an existing knowledge.",
+      "category": "ai",
+      "keywords": ["mcp", "knowledge", "x402", "llm-memory", "teaching"]
+    }
+  ]
+}

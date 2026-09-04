@@ -114,7 +114,8 @@ claude mcp add --transport http ainize http://127.0.0.1:3499/mcp
 pass `--i-am-the-only-user`: a port is reachable by people who are not the operator.
 
 **Cursor / Claude Desktop / Windsurf** (`~/.cursor/mcp.json` or the app's config) and a project `.mcp.json` use the
-same object shape:
+same object shape — a commented, ready-to-paste version of both blocks is in
+[`client-config.example.json`](client-config.example.json):
 
 ```jsonc
 {
@@ -160,6 +161,40 @@ same object shape:
 **All of them share one model server** (`http://localhost:8002`). A live test run from an MCP client is therefore
 visible to every other node on the machine, and anything *applied* changes the "before" column of everyone else's
 live test until it is removed.
+
+---
+
+## The skill — for an agent that has to do this well
+
+[`SKILL.md`](SKILL.md) is the agent-facing half of this package, written in the shape The Graph uses for its
+[subgraph](https://github.com/graphprotocol/subgraphs-skills) and
+[Substreams](https://github.com/streamingfast/substreams-skills) skills: ~100 tokens of frontmatter, a body under
+5,000 tokens, and everything deep in [`references/`](references). It states the two safety tiers, the five
+workflows (*find · prove · buy within a budget · teach · teach from a subgraph*), and the two hard rules — never
+print a credential, never background-poll a human decision.
+
+| File | Contents |
+|---|---|
+| [`SKILL.md`](SKILL.md) | the hub: when to use it, the tiers, the workflows, worked examples, troubleshooting |
+| [`references/money.md`](references/money.md) | x402, quote → confirm → settle, caps, idempotency, reconcile, the 49 % split |
+| [`references/live-test.md`](references/live-test.md) | modes, the shared-model caveat, quota arithmetic, reading a `verdict` |
+| [`references/teach-and-lineage.md`](references/teach-and-lineage.md) | both doors, `base` vs `compare_with`, the 13 states, publish consent |
+| [`references/verification.md`](references/verification.md) | quorum, attestations, challenges, what "verified" is not |
+| [`references/errors.md`](references/errors.md) | every code, `retryable`, and the recovery |
+| [`references/subgraph-to-dataset.md`](references/subgraph-to-dataset.md) | direction B end to end, provenance, the volatility rule |
+| [`references/cli.md`](references/cli.md) | the equivalent `ainize` CLI commands |
+| [`EVAL.md`](EVAL.md) | eight plain-English prompts and their mechanical pass conditions — re-runnable by a judge |
+
+`scripts/validate-skill.mjs` checks the frontmatter, the token budget, that every `references/*.md` is linked and
+that every tool the body names is actually registered; `npm test -w packages/mcp` runs it, so the skill cannot drift
+away from the server. Packaging metadata for `claude plugins add` is in
+[`.claude-plugin/`](.claude-plugin/plugin.json); publishing it as a marketplace additionally needs
+`.claude-plugin/marketplace.json` copied to the **repository root** of a public repo, which is why the file here
+declares its plugin source as `./packages/mcp`.
+
+A skill is guidance, not enforcement — StreamingFast's own EVAL says it plainly: *skill text alone does not override
+model posture.* That is why "quote before you buy" is a required `quote_id` in the `buy` schema and not a sentence
+in a document.
 
 ---
 
@@ -237,6 +272,409 @@ Every failure an agent can act on comes back as a normal tool result with `isErr
 
 Two node answers are **outcomes, not errors**: HTTP 499 `{cancelled, charged:false}` (a live test given up while
 queued) and a quote of a knowledge that is already owned.
+
+---
+
+## The async model — start, poll, cancel
+
+Nothing that touches the model is a blocking call. The shared runtime lock is cross-process and the node waits up
+to **20 minutes** on it, so a blocking tool would hit the client's timeout, the client would retry, and the retry
+would open another queue ticket behind the one it was waiting on.
+
+```
+live_test / teach / teach_preflight / apply_knowledge / remove_knowledge / buy
+    → { job_id, state: "queued", poll_after_ms, model_lock: { sentence }, … }        in ~100 ms
+job_status { job_id, wait_ms: 25000 }                                                 → the next state change
+job_cancel { job_id }                                                                 → charged: true | false
+job_list {}                                                                           → what this session started
+```
+
+- **`wait_ms` long-polls inside this server.** It never holds a request open on the node; it waits for a state
+  change locally and answers as soon as one happens. A queued job usually needs two calls (queued → running →
+  done), which is what you want: the intermediate answer carries progress.
+- **Jobs are session-scoped** and evicted 30 minutes after they finish (`job_not_found` after that). A lesson can
+  also be polled by its *node* lesson id, so a conversation that lost its `job_id` is not stuck.
+- **Every job answer names the holder of the model**, computed against the node's own clock:
+  `"the model is held by pid:2658057 (a live test of krx-all-2761) for 8 s"`, plus `queue.waiting`.
+- **Cancelling a queued live test is genuinely free** (`charged: false`); cancelling a running one is not, and the
+  answer says so. Cancelling a lesson never gives the daily lesson back.
+- **`buy` is a job too**, because a blob download can take minutes. Its failure path is `reconcile_purchase`, never
+  a retry.
+
+## Every tool, with an example call and answer
+
+Answers are abridged with `…`; every field shown is real. The examples marked *(node-a)* / *(node-u)* were captured
+from the running cluster on 2026-09-04; the rest come from the request-recording fake node the test suite uses
+(`test/fake-node.ts`), which answers with the node's own shapes.
+
+### `search_knowledge` — browse and search *(node-a)*
+
+```jsonc
+search_knowledge { "query": "ticker", "limit": 3 }
+// also: model, schema, status, author, origin ("operator" | "teach"), sort ("latest"|"popular"|"price"|"rows"), offset
+```
+```jsonc
+{ "total": 4, "shown": 3, "offset": 0,
+  "items": [{
+    "id": "krx-all-2761", "name": "KRX ticker codes for 2,761 listed companies (final)",
+    "description": "All 2,761 ticker codes of companies listed on the Korea Exchange…",
+    "price": "25", "currency": "AIN", "rows": 270053, "size_mb": 331.7,
+    "status": "LISTED", "downloads": 93, "quorum": "2/2", "quorum_ok": true, "sellable": true,
+    "author_name": "node-a", "taught_by": null, "model": "Qwen3.8-Flash-Next", "schema": "krx-ticker-codes",
+    "origin": "operator", "is_addon": false, "requires_count": 0, "node_url": "http://localhost:3402"
+  }, … ],
+  "facets": { "models": ["Qwen3.8-Flash-Next"], "schemas": ["krx-ticker-codes"] } }
+```
+
+### `get_knowledge` — detail, verifiers, lineage, base stack *(node-a)*
+
+```jsonc
+get_knowledge { "id": "krx-all-2761", "include": ["records", "events", "benchmark_siblings"] }   // include is optional
+```
+```jsonc
+{ "knowledge": { "id": "krx-all-2761", "price": "25", "status": "LISTED", "topic_path": "finance/krx",
+                 "benchmark_queries": 2761, "supersedes": ["krx-all-2761-ep12", "krx-all-2761-ep6", "pixelplus-087600"],
+                 "superseded_by": [], … },
+  "verification": { "quorum": "2/2", "quorum_ok": true, "sellable": true, "open_challenge": null,
+    "attestations": [ { "verifier_name": "node-b", "passed": true,
+                        "score": { "free_generation": "26/26", "pre_apply": "1/8" },
+                        "verified_on": "vllm:Qwen3.8-Flash-Next" }, … ] },
+  "lineage": { "parents": [{ "id": "krx-all-2761-ep12", "status": "SUPERSEDED" }], "children": [] },
+  "requires": [], "requires_note": null,
+  "availability": { "has_body": true, "purchased": false, "owned": true, "applied": false,
+                    "gateway_url": "http://localhost:3402/x402/patch/krx-all-2761" },
+  "training_set": null }
+```
+
+### `family_tree` — the version and derivation graph *(node-a)*
+
+```jsonc
+family_tree { "id": "krx-all-2761", "depth": 2 }
+```
+```jsonc
+{ "root": "krx-all-2761",
+  "nodes": [{ "id": "krx-all-2761", "status": "LISTED", "added": null, "signals": null }, … ],
+  "edges": [{ "from": "krx-all-2761", "to": "krx-all-2761-ep12", "kind": "extends" },
+            { "from": "krx-all-2761", "to": "pixelplus-087600", "kind": "supersedes" }, … ],
+  "truncated": false,
+  "note": "Edge kinds beyond extends/supersedes, per-node `added` counts and usage signals are not recorded by the node yet (lineage design §12.5, PR L6). `added` and `signals` are null, not 0 — do not report a number here." }
+```
+
+### `get_training_set` — what a knowledge was built from
+
+```jsonc
+get_training_set { "id": "k1", "rows": false, "limit": 20 }    // rows: true streams the real rows (public access only)
+```
+```jsonc
+{ "id": "k1", "sha256": "dddd…", "rows_total": 2761, "access": "public", "license": "CC-BY-4.0",
+  "parents": [], "held": true, "include_notes": false, "merkle_root": null,
+  "preview": [{ "prompt": "Q", "answer": "A" }, …], "rows": null }
+```
+Access levels: `public` (open) · `derivative` (a teaching key only — this server signs with its own) · `private`
+(refused, with the metadata in the error body).
+
+### `node_status` — the node, the model, the lock, the caps *(node-a)*
+
+```jsonc
+node_status { "refresh": false }     // refresh: true forces a runtime probe (~3 s)
+```
+```jsonc
+{ "node": { "name": "node-a", "ledger": "ain", "roles": ["seller","verifier","serving"], "quorum": 2,
+            "currency": "AIN", "model": "Qwen3.8-Flash-Next", "balance": "3374.29…",
+            "royalty_share": 0.3, "contributor_share": 0.7, "peers": 2,
+            "counts": { "patches": 4, "listed": 1, "superseded": 3 }, "applied": [] },
+  "runtime": { "available": true, "api": "http://localhost:8002", "hook": true, "applied": [] },
+  "model_lock": { "holder": { "owner": "pid:2658057", "label": "chat:krx-all-2761", "held_s": 1, "mine": true },
+                  "queue": { "running": 1, "waiting": 0 },
+                  "sentence": "the model is held by pid:2658057 (a live test of krx-all-2761) for 1 s" },
+  "quota": { "live_tests_remaining": null, "limit": 20,
+             "shared_note": "the node has no quota endpoint — the remaining count is only known after a live test answers…" },
+  "teach_policy": { "enabled": true, "publish": "auto", "trainer": "ready", "backend": "stub", "limits": { … } },
+  "capabilities": { "can_read": true, "can_live_test": true, "can_teach": false, "can_buy": false,
+                    "can_apply": false, "can_publish": false },
+  "capability_reasons": { "can_buy": "no operator credential is configured on this MCP server…", … },
+  "budget": { "cap": "0", "spent": "0", "remaining": "0", "currency": "AIN" },
+  "warnings": ["this node is on the shared AIN chain: publishing and announcing are refused by this server unless explicitly allowed"] }
+```
+
+### `my_library` — what this node owns, bought, taught and earned
+
+```jsonc
+my_library { "include": ["purchases", "published", "applied", "lessons", "datasets"] }   // all five by default
+```
+```jsonc
+{ "purchases": [{ "id": "k1", "amount": "5", "currency": "CREDIT", "tx_hash": "0x…", "bought_at": 1788…, "body_present": true }],
+  "published": [ /* flat knowledge rows */ ], "applied": [], "lessons": [], "datasets": [],
+  "omitted": [{ "section": "purchases", "reason": "no operator credential is configured on this MCP server" }],
+  "teaching_key_address": "0x2999…" }
+```
+The stored **manifest is never returned** — it carries a download token. The tx hash is.
+
+### `knowledge_signals` — usage, honestly
+
+```jsonc
+knowledge_signals { "id": "k1", "limit": 20 }
+```
+```jsonc
+{ "id": "k1", "downloads": 93, "revenue": "2325",
+  "verification": { "quorum": "2/2", "attestations": [ … ] },
+  "events": [{ "ts": 1, "level": "info", "kind": "usage", "message": "live test k1" }],
+  "signals": null,
+  "note": "GET /api/patches/:id/signals and /issues are PR L6 and do not exist yet: `signals` is null, not zero. Events are redacted for non-operators, and everything here is what this one node recorded — not network truth." }
+```
+
+### `teacher_profile` — a data provider's public page
+
+```jsonc
+teacher_profile { "address": "0x2222…" }
+```
+```jsonc
+{ "address": "0x2222…", "name": "a teacher", "lessons": [ … ],
+  "earnings": { "total": "0", "currency": "CREDIT" } }
+```
+
+### `live_test` → `job_status` — the before/after *(node-a, real run)*
+
+```jsonc
+live_test { "question": "픽셀플러스 종목코드 알려줘. 숫자만.", "knowledge": ["krx-all-2761"], "mode": "compare" }
+```
+```jsonc
+// 91 ms
+{ "job_id": "lt_3e19184626c3", "kind": "live_test", "state": "queued", "poll_after_ms": 1500,
+  "model_lock": { "sentence": "the model is held by pid:2658069 (a live test of krx-all-2761) for 7 s" },
+  "applied_on_this_model": [],
+  "quota": { "remaining": null, "limit": 20, "shared_note": "shared by everyone using this MCP server…" },
+  "next": "call job_status with this job_id (wait_ms lets one call cover the whole wait)" }
+```
+```jsonc
+job_status { "job_id": "lt_3e19184626c3", "wait_ms": 90000 }
+```
+```jsonc
+// 18.9 s later
+{ "state": "done", "elapsed_ms": 18828,
+  "result": {
+    "before": { "answer": "058420", "latency_ms": 406, "truncated": false },
+    "after":  { "answer": "087600", "latency_ms": 378, "truncated": false },
+    "changed": true, "verdict": null,
+    "knowledge": [{ "id": "krx-all-2761", "applied_ms": 3789, "was_already_applied": true,
+                    "verification": { "quorum": "2/2", "attestations": [ /* node-b 26/26, node-c 26/26 */ ] } }],
+    "apply_ms_total": 3789,
+    "quota": { "remaining": 17, "limit": 20, "shared_note": "free live tests are metered per visitor IP — this bucket is shared by everyone using this MCP server" },
+    "caveats": ["this question is not in the knowledge's own benchmark, so the comparison is unscored — report it as a comparison, not as a verified result"] } }
+```
+
+### `job_cancel` · `job_list`
+
+```jsonc
+job_cancel { "job_id": "lt_…", "reason": "the user changed the question" }
+→ { "job_id": "lt_…", "kind": "live_test", "cancelled": true, "reason": "queued", "charged": false,
+    "note": "nothing had reached the model, so nothing was charged" }
+// once it is running:  "reason": "already_running", "charged": true,
+//   "note": "the node had already started this on the model: the work and the metered try stand…"
+// a lesson:            "charged": true,
+//   "note": "the lesson is cancelled, but the daily lesson it consumed is NOT returned — the node charges one at submit time…"
+
+job_list { "kind": "teach", "state": "running", "limit": 20 }
+→ { "jobs": [{ "job_id": "th_…", "kind": "teach", "state": "running", "native_state": "TRAINING",
+               "summary": "MCP docs demo", "started_at": 1788…, "finished_at": null }, …] }
+```
+
+### `create_training_set` *(node-u, real run)*
+
+```jsonc
+create_training_set {
+  "rows": [{ "prompt": "What is the internal code name of the Ainize MCP bridge?", "answer": "aincp-3" },
+           { "prompt": "Which port does the Ainize teach demo node listen on?", "answer": "3422" }],
+  "name": "MCP docs demo", "retention": "keep",
+  "provenance": { /* from McpDataSource, optional */ } }
+```
+```jsonc
+{ "dataset_id": "43647481-78ed-46b5-8b40-dc92272442ff", "existing": false, "rows_accepted": 2, "rows_rejected": [],
+  "sha256": "67c1b685259a898c9f92ff6a8deedbfa9a2900e8bc3ca016d66840433a143890",
+  "predicted_sha256": "67c1b685…", "sha256_matches_prediction": true, "revision": 1, "size_bytes": 172,
+  "summary": { "source_rows": 2, "accepted": 2, "duplicates": 0, "conflicts": 0, "too_long": 0, "langs": { "latin": 2, … } },
+  "note": "a new training set was created on the node" }
+```
+
+### `teach_preflight` → `job_status` *(node-u, real run)*
+
+```jsonc
+teach_preflight { "dataset_id": "43647481-…" }        // or { rows: [...] }, plus base / compare_with
+→ { "job_id": "tp_28da33a8a678", "state": "queued",
+    "cost": "free of money; it spends at least one of the 20 free live-test units per hour, charged to this server's IP and to the teaching key" }
+```
+```jsonc
+job_status { "job_id": "tp_28da33a8a678", "wait_ms": 120000 }
+→ { "state": "done", "result": {
+      "trainable": 2, "checked": 2,
+      "sampled": { "checked": 2, "of": 2, "note": "a sample of the training set, not the whole of it — the node probes at most 8 questions per call" },
+      "items": [{ "question": "What is the internal code name of the Ainize MCP bridge?", "expected": "aincp-3",
+                  "status": "will_train", "model_said": "(stub model) I do not know: …",
+                  "meaning": "the model gets this wrong today — teaching it is worth a lesson" }, … ],
+      "lessons_left_today": { "key": 20, "address": 0 },
+      "cost_note": "this preflight spent free live-test units (one per three model calls, at least one)…" } }
+```
+*(node-u runs the stub trainer, so `model_said` is stubbed. The shape is identical on a GPU node.)*
+
+### `teach` → `job_status`
+
+```jsonc
+teach { "rows": [{ "prompt": "…", "answer": "…" }], "base": ["krx-all-2761"], "mode": "extend",
+        "export": "delta", "effort": "balanced", "dry_run": false, "confirm": false }
+```
+```jsonc
+{ "job_id": "th_5c018e8ae834", "state": "queued", "poll_after_ms": 3000,
+  "built_on": [{ "id": "base1", "status": "LISTED", "price": "5", "body_held": false, "training_set": "public", "problem": null }],
+  "mode": "extend", "export": "delta",
+  "lessons": { "limit": 3, "used_today": 0, "remaining": 3, "session_cap": 3, "session_spent": 1 },
+  "what_happens_next": "the training set is uploaded, the model is asked what it already knows (that is the preflight), and the lesson is submitted only if something is left to teach",
+  "eta_note": "no measured estimate yet — job_status carries the node's own ETA once the lesson is queued" }
+```
+```jsonc
+job_status { "job_id": "th_5c018e8ae834", "wait_ms": 25000 }
+→ { "state": "done", "node_job_id": "lesson-1", "result": {
+      "native_state": "READY", "what_is_happening": "ready: the lesson stuck and passed its checks",
+      "eta_s": null, "eta_note": "no measured estimate yet", "progress": null,
+      "questions": { "in_the_lesson": 1, "measured": 1, "learned": 1, "not_learned": 0,
+                     "still_wrong": [], "taught": [{ "question": "Q1?", "answer": "A1", "alt_phrasing_ok": true }] },
+      "checks": { "taught": { "hits": 1, "of": 1, "percent": 100 },
+                  "other_phrasing": { "hits": 1, "of": 1, "percent": 100 },
+                  "did_not_break_the_base": { "ok": true, "hits": 10, "of": 10 },
+                  "did_not_change_unrelated_answers": { "ok": true, "same": 20, "of": 20 },
+                  "reversible": null, "publish_gate": "open",
+                  "note": "this node trains with the STUB backend: these numbers were simulated, nothing was measured in a live model" },
+      "training_set": { "id": "ds_1", "sha256": "…", "rows": 1, "trained_rows": 1 },
+      "knowledge_file": { "sha256": "…", "rows": 1, "size_bytes": 1024 },
+      "draft_id": "taught-draft-1", "publish_status": "none",
+      "next_steps": ["live_test with knowledge: [\"taught-draft-1\"] — prove the new answer against the bare model…",
+                     "download_lesson — …the draft stays private until you publish it",
+                     "publish_knowledge — irreversible: it writes a record on the ledger and offers the knowledge for sale"],
+      "quota": { "key_remaining": 2, "ip_remaining": 5, "rows_remaining": 300 } } }
+```
+
+The refusals are the interesting part:
+
+```jsonc
+teach { "rows": [ /* things the model already answers */ ] }
+→ isError: true
+  { "code": "nothing_to_train",
+    "message": "the model already answers all 3 probed questions correctly — no lesson was submitted and none was spent.",
+    "retryable": false, "details": { "items": [ /* per-question verdicts */ ] } }
+
+teach { … }            // when the key has one lesson left today
+→ { "code": "confirmation_required",
+    "message": "this is the last lesson this teaching key has on http://localhost:3422 today (2 of 3 used), and a lesson that fails is not refunded…" }
+
+teach { "base": ["a", "b"] }
+→ { "code": "merge_not_available", "message": "combining two knowledges is a merge, and no node supports it yet — build on one of them." }
+```
+
+### `download_lesson` — keep it private
+
+```jsonc
+download_lesson { "lesson_id": "lesson-1", "include": ["knowledge_file", "recipe", "notes"] }   // all three by default
+→ { "lesson_id": "lesson-1", "directory": "/…/lessons/lesson-1",
+    "files": [{ "what": "knowledge_file", "path": "/…/lesson-x.npz", "bytes": 1024 },
+              { "what": "recipe", "path": "/…/recipe.json", "bytes": 312 },
+              { "what": "notes", "path": "/…/RUN-LOCALLY.md", "bytes": 2048 }],
+    "knowledge": { "sha256": "eeee…", "rows": 3, "size_bytes": 1024, "filename": "lesson-x.npz", "model": "Qwen3.8-Flash-Next" },
+    "privacy": "this lesson is still a private draft on the node: nothing was published, nothing was announced, and nobody else can see it.",
+    "note": "the node's download links carry a short-lived token, which is a credential — this server used them and did not return them." }
+```
+
+### `publish_knowledge` — irreversible, opt-in
+
+```jsonc
+publish_knowledge { "lesson_id": "lesson-1", "name": "X", "description": "…", "price": "5",
+                    "license": "CC-BY-4.0", "training_set": { "access": "derivative", "source": "own", "no_pii": true },
+                    "dry_run": true }
+```
+```jsonc
+{ "dry_run": true,
+  "lesson": { "id": "lesson-1", "status": "READY", "built_on": [] },
+  "would_publish": { "name": "X", "price": "0", "currency": "CREDIT", "license": null, "training_set": null },
+  "split_preview": { "to_the_people_it_was_built_on": { "amount": "0", "applies": false, "note": "no parent, so no lineage pool" },
+                     "to_you_the_teacher": { "of_what_is_left": "70%" },
+                     "explanation": "70% of the price, because this knowledge has no parent to pay." },
+  "ledger": "local",
+  "confirm_phrase_required": "publish lesson-1 permanently",
+  "note": "nothing was written. Show the human the split and the fact that this cannot be undone, wait for them, then call again with both consents and the confirmation phrase." }
+```
+With a parent, `explanation` reads *"49% of the price: a lineage pool of 30% is paid to what it was built on first"*
+— the real number, never the publish sheet's flat 70 %. The live call additionally needs
+`consent_permanent: true`, `consent_rights: true` and the exact `confirm_phrase`, and is refused with
+`permanent_ledger_refused` on a node whose ledger is `ain`.
+
+### `quote` — the honest total, free *(node-b, a real 25 AIN knowledge against a 10 AIN cap)*
+
+```jsonc
+quote { "id": "krx-all-2761", "dry_run": true }     // dry_run prices from the catalogue and reserves no nonce
+```
+```jsonc
+{ "quote_id": "q_16b6e28da2a3", "expires_at": 1788516643556, "binding": false, "dry_run": true,
+  "items": [{ "id": "krx-all-2761", "role": "requested", "price": "25", "currency": "AIN", "status": "LISTED",
+              "superseded_by": null, "license": null, "seller": "0xF7A9…", "quorum": "2/2", "sellable": true,
+              "already_purchased": false, "owned": false, "body_held": true,
+              "gateway_url": "http://localhost:3402/x402/patch/krx-all-2761" }],
+  "total_requested": "25", "total_with_bases": "25",
+  "budget": { "cap": "10", "spent": "0", "reserved": "0", "remaining": "10", "per_purchase_cap": "10" },
+  "affordable": { "requested": false, "with_bases": false, "shortfall": "15",
+    "explanation": "krx-all-2761 alone costs 25 AIN and does not fit. With the bases it needs the honest total is 25 — 15 over your remaining 10. Buy the add-on now and it sits unusable until the base is bought, raise AINIZE_MCP_SESSION_BUDGET, or look for a stand-alone knowledge that covers the same questions." },
+  "confirm_with": { "tool": "buy", "quote_id": "q_16b6e28da2a3", "confirm_total": "25", "confirm": true },
+  "next": "show the human the total, the bases and the remaining budget, then STOP. Never call buy in the same turn you first learned the price." }
+```
+Without `dry_run` the answer is `binding: true` and each item also carries `scheme`, `pay_to` and `nonce` from the
+seller's own 402.
+
+### `buy` — settles a quote, and only a quote
+
+```jsonc
+buy { "quote_id": "q_876cc6d685ec", "confirm_total": "5", "confirm": true, "dry_run": true }
+→ { "dry_run": true, "would_buy": "k1", "amount": "5", "currency": "CREDIT",
+    "gates_passed": ["quote present and unexpired", "total restated exactly", "confirm: true",
+                     "not already purchased", "quorum met", "not challenged", "price unchanged",
+                     "within the session cap"],
+    "note": "nothing was called on the gateway and no nonce was reserved. Re-run without dry_run to settle." }
+```
+```jsonc
+buy { "quote_id": "q_876cc6d685ec", "confirm_total": "5", "confirm": true }   // optional: apply, max_price, idempotency_key
+→ { "job_id": "by_e8dd1778e6b4", "state": "queued", "patch_id": "k1", "amount": "5",
+    "idempotency_key": "q:896b97cf…",
+    "budget": { "cap": "10", "spent": "0", "reserved": "5", "remaining": "5" },
+    "next": "poll job_status. If it fails or times out, do NOT buy again — call reconcile_purchase with this idempotency_key." }
+
+job_status { "job_id": "by_e8dd1778e6b4", "wait_ms": 60000 }
+→ { "state": "done", "result": {
+      "patch_id": "k1", "amount": "5", "scheme": "local-credit", "tx_hash": "0xbbbb…",
+      "body_present": true, "applied": false,
+      "steps": [{ "step": "quorum", "detail": "2 attestation(s) ≥ quorum 2" }, { "step": "402", "detail": "payment required" },
+                { "step": "settled", "detail": "paid" }, { "step": "download", "detail": "body fetched" }],
+      "budget": { "cap": "10", "spent": "5", "remaining": "5" } } }
+```
+
+### `reconcile_purchase` — after any failure, instead of paying again
+
+```jsonc
+reconcile_purchase { "id": "k1" }        // or { idempotency_key }
+→ { "state": "complete",
+    "purchase": { "amount": "5", "scheme": "local-credit", "tx_hash": "0x…", "bought_at": 1788…, "body_present": true },
+    "explanation": "k1 is paid for and recorded on this node (tx …). Buying it again would pay a second time for nothing." }
+```
+The four states are `complete` · `settled_no_body` (the money moved, the body did not — carries the tx hash) ·
+`never_paid` (a fresh quote → buy is safe) · `recovered`.
+
+### `apply_knowledge` / `remove_knowledge` — off by default
+
+```jsonc
+apply_knowledge { "id": "krx-all-2761" }
+→ { "job_id": "ap_…", "state": "queued", "patch_id": "krx-all-2761",
+    "model_lock": { "sentence": "the model is free" },
+    "warning": "this changes the model server every node on this machine shares; the change persists across restarts and is visible to every other user of that model" }
+
+remove_knowledge { "id": "krx-all-2761" }            // without confirm
+→ { "code": "confirmation_required",
+    "message": "removing krx-all-2761 writes the base model back over every memory row it owns, including rows another loaded knowledge shares — pass confirm: true once the human has agreed." }
+```
 
 ---
 
@@ -377,9 +815,31 @@ npx tsc -p packages/mcp/tsconfig.json --noEmit
 **not** called: a dry-run quote must never touch `/x402/…` (a 402 reserves a nonce), a refused gate must never reach
 `/api/patches/:id/buy`, and a replayed idempotency key must not produce a second purchase.
 
+## Troubleshooting
+
+| Symptom | Cause | What to do |
+|---|---|---|
+| The client shows **0 tools** | the server started but the node did not answer | check `AINIZE_NODE_URL`; `curl $AINIZE_NODE_URL/api/info`. Read tools register even when the node is down, so 0 tools means the process itself failed — run `node packages/mcp/dist/bin.js --help` by hand and read stderr |
+| The stdio handshake **hangs or garbles** | something printed to stdout before the transport connected | this server guards stdout before importing anything (`@ngram/core` prints `secp256k1 unavailable` on import). If you add an import that prints, that guard is why the handshake still works |
+| **`teach` is missing** | no teaching key, or the node runs no teach worker | set `AINIZE_TEACH_KEY`; `node_status` → `capability_reasons.can_teach` says which |
+| **`buy` is missing** | the session budget is `0` (the default), or no operator credential | set `AINIZE_MCP_SESSION_BUDGET` **and** `AINIZE_OPERATOR_PASSWORD` / `AINIZE_TOKEN`. Buying is operator-gated on the node itself |
+| **`publish_knowledge` is missing** | it is opt-in | `AINIZE_MCP_ALLOW_PUBLISH=1`, and on an AIN-chain node also `AINIZE_MCP_ALLOW_AIN_PUBLISH=1` (think first: nothing on that chain can be recalled) |
+| `--http` **refuses to start** | a spending budget or apply/publish is enabled on a listening port | that is the guard. Add `--i-am-the-only-user` if the port really is private, or drop the budget |
+| Everything is **`model_busy`** | another node holds the shared model | the message names the holder and how long. `node_status` shows the queue. Wait; do not loop |
+| **`quota_chat`** after a few tests | 20 free live tests per hour per visitor IP, and one MCP server is one IP | `retry_after_ms` says when they come back. An operator credential removes the cap and the metering with it |
+| **`quota_ip` / `quota_key`** on a lesson | the node's daily lesson limit for this IP or key | measured on node-u while writing these docs: `{"code":"quota_ip","message":"daily lesson limit reached for this address"}`. Nothing to retry today — use a private cluster for experiments |
+| **`invalid_signature`** with a key you know is right | a teaching-key signature is request-bound and single use; something replayed the request | do not cache or reuse a header; do not follow redirects. This server signs per attempt |
+| A live test's **"before" already knows the answer** | the knowledge is *pinned* on the shared model server by somebody else | `result.knowledge[].was_already_applied` and `applied_on_this_model` say so. Report it; the comparison is not against a bare model |
+| `verdict` is **`null`** | the question is not in the knowledge's own benchmark | say "unscored comparison". It is not a failure |
+| `eta_s` is **`null`** | the node has fewer than three measured samples on a real backend | render "no measured estimate yet". Never 0 |
+| A lesson says **100 % and `simulated: true`** | the node trains with the stub backend | nothing was measured in a live model. Say so before anyone believes the number |
+| `job_not_found` | jobs are session-scoped, evicted 30 min after finishing | `job_list`; for a lesson, poll by its node lesson id |
+| A buy **timed out** | the blob download can take minutes | never buy again. `reconcile_purchase` tells you whether the money moved |
+| The node answers **409 `not sold here; gateway is <url>`** | you are quoting a knowledge another node sells | point the server at that node, or buy from it. The url in the error is the answer |
+
+
 ## Not in this version
 
-- **Prompts and the `ainize://knowledge/{id}` resource template**, `SKILL.md` and `EVAL.md` — the next PR.
 - **`merge`.** Two bases is a merge, which no node supports yet: the schema reserves the value and the refusal quotes
   the node's own `merge_not_available`.
 - **A provenance field on the dataset manifest.** Until the lineage work adds one, provenance rides in each row's
@@ -387,6 +847,7 @@ npx tsc -p packages/mcp/tsconfig.json --noEmit
 - **`reconcile_purchase` cannot re-fetch a body itself.** It reports `settled_no_body` with the tx hash and names the
   recovery, because the blob fetch needs a signature from the *node identity* key, which this server deliberately
   does not hold.
-- **Prompts** (`prove_it`, `shop_for_knowledge`, `teach_on_top`) and the `ainize://knowledge/{id}` resource template.
+- **Prompts** (`prove_it`, `shop_for_knowledge`, `teach_on_top`, `subgraph_to_knowledge`) and the
+  `ainize://knowledge/{id}` resource template — the tools and `ainize://instructions` carry the same guidance today.
 - **A bundle buy.** `quote` states the whole stack and its honest total; `buy` purchases the named child only and
   says so before the money moves, because `?bundle=1` does not exist on the node.
