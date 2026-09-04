@@ -16,6 +16,7 @@ import { fail } from '../errors.js';
 import { modelLock, verification, type NodeLock, type RawEntry } from '../format.js';
 import type { Job } from '../jobs.js';
 import { teachJobView, TEACH_TERMINAL, type TeachJobRaw } from '../teach-view.js';
+import { echoId } from '../scrub.js';
 import { tool, type ToolDef } from './types.js';
 
 interface ChatColumn { content: string; latency_ms: number; truncated?: boolean; finish_reason?: string }
@@ -205,7 +206,7 @@ export function liveTools(ctx: Context): ToolDef[] {
             poll_after_ms: TEACH_TERMINAL.includes(lesson.status) ? 0 : 3000,
           };
         }
-        throw fail('job_not_found', `no job ${a.job_id} on this server (jobs are session-scoped and evicted 30 minutes after they finish) — call job_list to see what is still here.`);
+        throw fail('job_not_found', `no job ${echoId(a.job_id)} on this server (jobs are session-scoped and evicted 30 minutes after they finish) — call job_list to see what is still here.`);
       }
       if (a.wait_ms) await ctx.jobs.waitForChange(a.job_id, a.wait_ms);
       const live = job.kind === 'live_test' ? await chatStatus(job) : null;
@@ -250,7 +251,7 @@ export function liveTools(ctx: Context): ToolDef[] {
     inputSchema: { job_id: z.string().min(1).max(64), reason: z.string().max(200).optional() },
     handler: async (a) => {
       const job = ctx.jobs.get(a.job_id);
-      if (!job) throw fail('job_not_found', `no job ${a.job_id} on this server.`);
+      if (!job) throw fail('job_not_found', `no job ${echoId(a.job_id)} on this server.`);
       let node: { cancelled?: boolean; reason?: string; charged?: boolean } | null = null;
       if (job.native.request_id) {
         node = await ctx.client.request<{ cancelled: boolean; reason: string; charged: boolean }>('/api/chat/cancel', { method: 'POST', body: { request_id: job.native.request_id } }).catch(() => null);

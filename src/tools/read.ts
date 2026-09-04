@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { Context } from '../context.js';
 import { fail, UpstreamError } from '../errors.js';
 import { knowledgeRow, modelLock, verification, type RawEntry, type NodeLock } from '../format.js';
+import { echoId } from '../scrub.js';
 import { tool, type ToolDef } from './types.js';
 
 const idArg = z.string().min(1).max(128).describe('the knowledge id, e.g. "krx-all-2761"');
@@ -17,7 +18,7 @@ const entryOf = async (ctx: Context, id: string): Promise<RawEntry & Record<stri
   try {
     return await ctx.client.request<RawEntry & Record<string, unknown>>(`/api/patches/${encodeURIComponent(id)}`);
   } catch (e) {
-    if (e instanceof UpstreamError && e.status === 404) throw fail('not_found', `no knowledge with id ${JSON.stringify(id)} on ${ctx.client.url} (a private draft is invisible to anyone but its owner). Try search_knowledge.`);
+    if (e instanceof UpstreamError && e.status === 404) throw fail('not_found', `no knowledge with id ${echoId(id)} on ${ctx.client.url} (a private draft is invisible to anyone but its owner). Try search_knowledge.`);
     throw e;
   }
 };
@@ -126,7 +127,7 @@ export function readTools(ctx: Context): ToolDef[] {
     handler: async (a) => {
       const graph = await ctx.client.request<{ nodes: { id: string; name: string; author: string; status: string; model: string; schema: string }[]; edges: { from: string; to: string; type: string }[] }>('/api/ledger/graph');
       const byId = new Map(graph.nodes.map((n) => [n.id, n]));
-      if (!byId.has(a.id)) throw fail('not_found', `no knowledge with id ${JSON.stringify(a.id)} in this node's ledger graph.`);
+      if (!byId.has(a.id)) throw fail('not_found', `no knowledge with id ${echoId(a.id)} in this node's ledger graph.`);
       const dir = a.direction ?? 'both';
       const depth = a.depth ?? 2;
       const keptEdges: { from: string; to: string; kind: string }[] = [];
@@ -162,21 +163,64 @@ export function readTools(ctx: Context): ToolDef[] {
     },
   });
 
+  /**
+   * A training set has two homes, and an agent holds ids from both: a PUBLISHED knowledge's set lives at
+   * `/api/patches/:id/dataset`, while a set this teaching key uploaded (what `create_training_set` returns, and what
+   * `teach`/`teach_preflight` take as `dataset_id`) lives at `/api/teach/datasets/:id`. Reading only the first one
+   * meant the id `create_training_set` had just handed back came home as the node's raw "patch not found".
+   */
+  const uploadedTrainingSet = async (a: { id: string; rows?: boolean; limit?: number }) => {
+    const id = encodeURIComponent(a.id);
+    const out = await ctx.client.request<{ dataset: Record<string, unknown> }>(`/api/teach/datasets/${id}`, { auth: 'teach' });
+    const d = out.dataset;
+    const limit = a.limit ?? 20;
+    const page = await ctx.client.request<{ total: number; items: Record<string, unknown>[]; summary?: Record<string, unknown> }>(
+      `/api/teach/datasets/${id}/rows?limit=${limit}`, { auth: 'teach' },
+    ).catch(() => null);
+    const items = page?.items ?? [];
+    return {
+      id: a.id,
+      kind: 'uploaded_training_set',
+      sha256: d.sha256, rows_total: d.rows, access: 'private (this teaching key only)', license: null,
+      name: d.name ?? null, status: d.status ?? null, source: d.source ?? null, retention: d.retention ?? null,
+      invalid_rows: d.invalid_rows ?? null, revision: d.revision ?? null,
+      summary: d.summary ?? page?.summary ?? null,
+      created_at: d.created_at ?? null, expires_at: d.expires_at ?? null,
+      trained_by: d.job_ids ?? [],
+      preview: items.slice(0, limit),
+      rows: a.rows ? items : null,
+      rows_note: 'this is a set THIS teaching key uploaded, not a published knowledge\'s: nobody else can read it, and it expires unless a lesson keeps it',
+    };
+  };
+
   const trainingSetTool = tool<{ id: string; rows?: boolean; limit?: number }>({
     name: 'get_training_set',
     title: 'Training set preview',
     tier: 'READ',
-    description: 'Preview the questions and answers a published knowledge was trained from, with its access level and licence. Use it to judge whether a knowledge really covers your question before paying. Free. A `derivative` set needs a teaching key (this server signs with its own when one is configured); a `private` one is refused with its metadata.',
+    description: 'Preview the questions and answers behind a training set — either the one a published knowledge was trained from (use it to judge whether a knowledge covers your question before paying) or one this teaching key uploaded with create_training_set (use it to show the human what actually landed before spending a lesson). Free. A `derivative` set needs a teaching key (this server signs with its own when one is configured); a `private` one is refused with its metadata.',
     annotations: { readOnlyHint: true, openWorldHint: true },
     inputSchema: {
-      id: idArg,
+      id: z.string().min(1).max(128).describe('a knowledge id, or the dataset_id create_training_set returned'),
       rows: z.boolean().default(false).describe('true = fetch the full row stream instead of the 20-row preview (public access only)'),
       limit: z.number().int().min(1).max(200).default(20),
     },
     handler: async (a) => {
       const id = encodeURIComponent(a.id);
       const auth = ctx.client.hasTeachKey ? 'teach' as const : 'none' as const;
-      const meta = await ctx.client.request<Record<string, unknown>>(`/api/patches/${id}/dataset`, { auth });
+      let meta: Record<string, unknown>;
+      try {
+        meta = await ctx.client.request<Record<string, unknown>>(`/api/patches/${id}/dataset`, { auth });
+      } catch (err) {
+        // Not a published knowledge. It may still be a set this key uploaded — try that before giving up, and if it
+        // is neither, say which two things the id was looked for as.
+        if (err instanceof UpstreamError && err.status === 404) {
+          if (ctx.client.hasTeachKey) {
+            try { return await uploadedTrainingSet(a); } catch { /* fall through to the joint message */ }
+          }
+          throw fail('not_found', `no training set for ${echoId(a.id)} on ${ctx.client.url}: it is neither a published knowledge on this node nor a training set this server's teaching key uploaded${ctx.client.hasTeachKey ? '' : ' (and this server has no teaching key, so it cannot read uploaded sets at all)'}. search_knowledge finds published ones; my_library { include: ["datasets"] } lists the uploaded ones.`);
+        }
+        throw err;
+      }
       const preview = (meta.preview as { prompt: string; answer: string; note?: string }[] | undefined) ?? [];
       let rows: unknown[] | null = null;
       if (a.rows) {
@@ -187,6 +231,7 @@ export function readTools(ctx: Context): ToolDef[] {
       }
       return {
         id: a.id,
+        kind: 'published_knowledge',
         sha256: meta.sha256, rows_total: meta.rows, access: meta.access, license: meta.license,
         parents: meta.parents ?? [], held: meta.held, include_notes: meta.include_notes ?? false,
         merkle_root: meta.merkle_root ?? null,
@@ -203,8 +248,13 @@ export function readTools(ctx: Context): ToolDef[] {
     tier: 'READ',
     description: 'What this node is, whether the shared model is free and who holds it, what this MCP server is allowed to do (capabilities), the free live-test quota as last observed, and the teach policy. Call it when a job says the model is busy, or before spending anything.',
     annotations: { readOnlyHint: true, openWorldHint: true },
-    inputSchema: { refresh: z.boolean().default(false).describe('force a live probe of the model server (adds up to ~3 s)') },
+    inputSchema: { refresh: z.boolean().default(false).describe('force a live probe of the model server, and re-derive what this server can do from what the node answers — call it after a live test failed because the model server was down (adds up to ~3 s)') },
     handler: async (a) => {
+      // A capability derived at startup goes stale the moment the shared model server is stopped or restarted, so a
+      // refresh re-derives it and tells the client its tool list moved. Without this, a session that started while
+      // the GPU was down keeps `live_test` hidden for its whole life.
+      const capsBefore = ctx.capabilities();
+      if (a.refresh) await ctx.syncCapabilities(0);
       const info = await ctx.nodeInfo(!!a.refresh);
       const chat = await ctx.client.request<{ runtime: Record<string, unknown>; lock: NodeLock | null; now: number; queue?: { running?: unknown; waiting?: number }; applied?: string[] }>('/api/chat/patches');
       const runtime = a.refresh
@@ -229,6 +279,9 @@ export function readTools(ctx: Context): ToolDef[] {
           : null,
         capabilities: ctx.capabilities(),
         capability_reasons: ctx.capabilityReasons(),
+        ...(a.refresh && (Object.keys(capsBefore) as (keyof typeof capsBefore)[]).some((k) => capsBefore[k] !== ctx.capabilities()[k])
+          ? { capabilities_changed: { before: capsBefore, now: ctx.capabilities(), note: 'the tool list changed with them — your client was sent notifications/tools/list_changed; list the tools again' } }
+          : {}),
         budget: ctx.budget.view(),
         server: ctx.configSummary(),
         warnings,

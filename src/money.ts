@@ -8,6 +8,7 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
+import { echoId } from './scrub.js';
 import { addAmounts, cmpAmounts, normalizeAmount, subAmounts } from './dec.js';
 import { fail } from './errors.js';
 
@@ -65,7 +66,7 @@ export class QuoteBook {
   require(id: string | undefined): Quote {
     if (!id) throw fail('quote_required', 'buy needs a quote_id — call `quote` first, show the human the total, and pass the quote back. There is no `id` parameter on `buy`: what gets bought is whatever the quote named.');
     const q = this.quotes.get(id);
-    if (!q) throw fail('quote_expired', `quote ${id} is unknown or has already expired — quote again (a quote is good for ${QUOTE_TTL_MS / 60_000} minutes) and show the human the fresh total.`);
+    if (!q) throw fail('quote_expired', `quote ${echoId(id)} is unknown or has already expired — quote again (a quote is good for ${QUOTE_TTL_MS / 60_000} minutes) and show the human the fresh total.`);
     if (q.expires_at <= this.now()) { this.quotes.delete(id); throw fail('quote_expired', `quote ${id} expired at ${new Date(q.expires_at).toISOString()} — prices and verification state can move, so quote again before spending.`); }
     return q;
   }

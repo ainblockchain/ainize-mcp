@@ -253,6 +253,13 @@ export class FakeNode {
         created: !existing,
       });
     }
+    const dsOne = /^\/api\/teach\/datasets\/([^/]+)$/.exec(pathname);
+    if (dsOne && req.method === 'GET') {
+      if (!signed()) return json(401, { error: 'invalid_signature: x-ngram-auth header missing' });
+      const d = this.datasets.get(decodeURIComponent(dsOne[1] as string));
+      if (!d) return json(404, { error: 'dataset_not_found: no such dataset on this node' });
+      return json(200, { dataset: { id: d.id, name: d.name, sha256: d.sha256, rows: d.rows.length, invalid_rows: 0, status: 'ready', source: 'chat', retention: 'keep', revision: 1, job_ids: [], created_at: 1788000000000, expires_at: 1788600000000 } });
+    }
     const dsRows = /^\/api\/teach\/datasets\/([^/]+)\/rows$/.exec(pathname);
     if (dsRows) {
       if (!signed()) return json(401, { error: 'invalid_signature: x-ngram-auth header missing' });
@@ -260,7 +267,7 @@ export class FakeNode {
       if (!d) return json(404, { error: 'dataset_not_found: no such dataset on this node' });
       const offset = Number(q.get('offset') ?? 0); const limit = Number(q.get('limit') ?? 50);
       const page = d.rows.slice(offset, offset + limit);
-      return json(200, { total: d.rows.length, source_rows: d.rows.length, offset, limit, summary: {}, items: page.map((r, i) => ({ index: offset + i, line: offset + i + 1, status: 'ok', prompt: r.prompt, answer: r.answer })) });
+      return json(200, { total: d.rows.length, source_rows: d.rows.length, offset, limit, summary: {}, items: page.map((r, i) => ({ index: offset + i, line: offset + i + 1, status: 'ok', prompt: r.prompt, answer: r.answer, ...(r.note ? { note: r.note } : {}) })) });
     }
     if (pathname === '/api/teach/preflight') {
       if (!signed()) return json(401, { error: 'invalid_signature: x-ngram-auth header missing' });
@@ -372,7 +379,13 @@ export class FakeNode {
       return json(200, { result: `${act[2]}: ok` });
     }
     const dataset = /^\/api\/patches\/([^/]+)\/dataset$/.exec(pathname);
-    if (dataset) return json(200, { sha256: 'd'.repeat(64), rows: 2761, access: 'public', license: 'CC-BY-4.0', parents: [], held: true, include_notes: false, benchmark_samples: null, merkle_root: null, preview: [{ prompt: 'Q', answer: 'A' }] });
+    // Only a knowledge this node actually lists has a published training set. Anything else 404s, which is what an
+    // uploaded `dataset_id` gets when it is handed to `get_training_set` — and what the fallback below is for.
+    if (dataset) {
+      const id = decodeURIComponent(dataset[1] as string);
+      if (this.datasets.has(id) || id.startsWith('ds_')) return json(404, { error: 'patch not found' });
+      return json(200, { sha256: 'd'.repeat(64), rows: 2761, access: 'public', license: 'CC-BY-4.0', parents: [], held: true, include_notes: false, benchmark_samples: null, merkle_root: null, preview: [{ prompt: 'Q', answer: 'A' }] });
+    }
     const events = /^\/api\/patches\/([^/]+)\/events$/.exec(pathname);
     if (events) return json(200, { events: [{ ts: 1, level: 'info', kind: 'usage', message: 'live test k1' }] });
     const records = /^\/api\/patches\/([^/]+)\/records$/.exec(pathname);

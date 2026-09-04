@@ -55,6 +55,7 @@ export class Context {
    */
   lessonsSpent = 0;
   private info: NodeInfoView | null = null;
+  private capsAt = 0;
   private caps: Capabilities = { can_read: true, can_live_test: false, can_teach: false, can_buy: false, can_apply: false, can_publish: false };
 
   constructor(readonly cfg: McpConfig, fetchImpl?: typeof fetch) {
@@ -90,9 +91,15 @@ export class Context {
     try { return await this.client.cached<Record<string, unknown>>('/api/teach/policy', 10_000); } catch { return null; }
   }
 
-  /** Derived once at startup; `capabilities()` is what the tool registration and `ainize://instructions` read. */
-  async resolveCapabilities(): Promise<Capabilities> {
-    const info = await this.nodeInfo().catch(() => null);
+  /**
+   * Derived from the node's own answers; `capabilities()` is what the tool registration and `ainize://instructions`
+   * read. `force` re-probes instead of trusting the read caches — which is what makes a capability RECOVERABLE: the
+   * shared model server can be stopped and restarted under a long-lived MCP session (it happens whenever someone
+   * needs the GPUs), and a session that resolved `can_live_test: false` once must not stay crippled for its whole
+   * life. `refreshCapabilities()` below is how a server notices, and `capabilityWatchers` is how its clients hear.
+   */
+  async resolveCapabilities(force = false): Promise<Capabilities> {
+    const info = await this.nodeInfo(force).catch(() => null);
     const policy = await this.teachPolicy();
     this.caps = {
       can_read: true,
@@ -102,10 +109,37 @@ export class Context {
       can_apply: this.client.hasOperator && this.cfg.allow.apply,
       can_publish: this.client.hasTeachKey && this.cfg.allow.publish && (info?.ledger !== 'ain' || this.cfg.allow.ainPublish),
     };
+    this.capsAt = Date.now();
     return this.caps;
   }
 
   capabilities(): Capabilities { return this.caps; }
+
+  /**
+   * Re-probe the node and report whether the capability set moved. Called on a slow timer by every connected server
+   * and eagerly by `node_status { refresh: true }`; `minAgeMs` keeps a burst of tool calls from turning into a burst
+   * of `/api/info` requests (the node rate-limits per IP per minute).
+   */
+  async refreshCapabilities(minAgeMs = 20_000): Promise<{ changed: boolean; before: Capabilities; caps: Capabilities }> {
+    const before = this.caps;
+    if (Date.now() - this.capsAt < minAgeMs) return { changed: false, before, caps: before };
+    this.capsAt = Date.now();       // set first: a slow probe must not let a second caller start another one
+    await this.resolveCapabilities(true).catch(() => this.caps);
+    const changed = (Object.keys(this.caps) as (keyof Capabilities)[]).some((k) => this.caps[k] !== before[k]);
+    return { changed, before, caps: this.caps };
+  }
+
+  /**
+   * Servers register a callback here so a capability that comes back (or goes away) reaches the client as a real
+   * `notifications/tools/list_changed`, instead of the client holding a tool list that stopped being true.
+   */
+  readonly capabilityWatchers = new Set<(caps: Capabilities) => void>();
+
+  async syncCapabilities(minAgeMs = 20_000): Promise<{ changed: boolean; before: Capabilities; caps: Capabilities }> {
+    const out = await this.refreshCapabilities(minAgeMs);
+    if (out.changed) for (const w of this.capabilityWatchers) { try { w(out.caps); } catch { /* one bad watcher must not break the others */ } }
+    return out;
+  }
 
   /** Why a capability is off, in one sentence — what `ainize://instructions` and a refusal both need to say. */
   capabilityReasons(): Record<string, string> {

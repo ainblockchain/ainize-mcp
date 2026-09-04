@@ -93,21 +93,47 @@ export function allTools(ctx: Context): ToolDef[] {
   return [...readTools(ctx), ...liveTools(ctx), ...teachTools(ctx), ...moneyTools(ctx)];
 }
 
+/** How often a connected server re-asks the node what it can do. Cheap: one cached `/api/info` + one teach policy. */
+const CAPABILITY_POLL_MS = 45_000;
+
 /** Build one `McpServer` for one client session. Capabilities are already resolved on `ctx`. */
 export function buildServer(ctx: Context): { server: McpServer; tools: ToolDef[] } {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION, title: 'Ainize knowledge marketplace' },
-    { capabilities: { tools: {}, resources: {} }, instructions: instructionsText(ctx) },
+    { capabilities: { tools: { listChanged: true }, resources: {} }, instructions: instructionsText(ctx) },
   );
   const tools = allTools(ctx);
-  for (const def of tools) {
-    server.registerTool(def.name, {
+  const registered = new Map<string, ReturnType<McpServer['registerTool']>>();
+  const register = (def: ToolDef) => {
+    registered.set(def.name, server.registerTool(def.name, {
       title: def.title,
       description: def.description,
       inputSchema: def.inputSchema,
       ...(def.annotations ? { annotations: def.annotations } : {}),
-    }, ((args: Record<string, never>, extra: ToolExtra) => callTool(ctx, def, args, extra)) as never);
-  }
+    }, ((args: Record<string, never>, extra: ToolExtra) => callTool(ctx, def, args, extra)) as never));
+  };
+  for (const def of tools) register(def);
+
+  /**
+   * The serving model can be stopped and restarted under a live session — a GPU gets claimed, a container is
+   * recycled — and the capability set moves with it. Rebuilding the tool list here (and letting the SDK emit
+   * `notifications/tools/list_changed`) is what stops a session from having to be restarted to get `live_test` back.
+   * A tool that goes away is disabled rather than removed, so it can be re-enabled when the node recovers.
+   */
+  const syncTools = () => {
+    const now = new Map(allTools(ctx).map((d) => [d.name, d]));
+    for (const [name, handle] of registered) {
+      const live = now.has(name);
+      if (live !== handle.enabled) handle.update({ enabled: live });
+    }
+    for (const [name, def] of now) if (!registered.has(name)) register(def);
+  };
+  const watcher = () => syncTools();
+  ctx.capabilityWatchers.add(watcher);
+  const timer = setInterval(() => { void ctx.syncCapabilities(CAPABILITY_POLL_MS - 5_000); }, CAPABILITY_POLL_MS);
+  timer.unref?.();                       // never the reason a process stays alive
+  const priorClose = server.server.onclose;
+  server.server.onclose = () => { clearInterval(timer); ctx.capabilityWatchers.delete(watcher); priorClose?.(); };
 
   server.registerResource('instructions', 'ainize://instructions', {
     title: 'Ainize server instructions',

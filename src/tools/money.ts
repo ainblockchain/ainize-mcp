@@ -16,6 +16,7 @@ import { fail, UpstreamError } from '../errors.js';
 import { addAmounts, cmpAmounts, normalizeAmount, subAmounts } from '../dec.js';
 import { PurchaseJournal, type Quote, type QuoteItem } from '../money.js';
 import type { RawEntry } from '../format.js';
+import { echoId } from '../scrub.js';
 import { tool, type ToolDef } from './types.js';
 
 interface PurchaseRow { patch_id: string; amount: string; tx_hash: string; scheme: string; created_at: number; path?: string | null; currency?: string }
@@ -48,7 +49,7 @@ export function moneyTools(ctx: Context): ToolDef[] {
       try {
         e = await ctx.client.request<RawEntry & Record<string, unknown>>(`/api/patches/${encodeURIComponent(id)}`);
       } catch (err) {
-        if (err instanceof UpstreamError && err.status === 404) throw fail('not_found', `no knowledge with id ${JSON.stringify(id)} on ${ctx.client.url}.`);
+        if (err instanceof UpstreamError && err.status === 404) throw fail('not_found', `no knowledge with id ${echoId(id)} on ${ctx.client.url}.`);
         throw err;
       }
       const info = await ctx.nodeInfo();
@@ -167,7 +168,7 @@ export function moneyTools(ctx: Context): ToolDef[] {
         const quote = ctx.quotes.require(a.quote_id);
         if (a.confirm !== true) throw fail('confirmation_required', 'buy needs confirm: true — a human has to agree to the spend, and a schema-filling model cannot approve by copying a number alone.');
         if (a.confirm_total !== quote.total_requested) {
-          throw fail('quote_mismatch', `confirm_total ${JSON.stringify(a.confirm_total)} is not the quoted total ${JSON.stringify(quote.total_requested)} for ${quote.patch_id}. Restate the number the quote showed, exactly.`, { details: { quoted_total: quote.total_requested, you_said: a.confirm_total, total_with_bases: quote.total_with_bases } });
+          throw fail('quote_mismatch', `confirm_total ${echoId(a.confirm_total)} is not the quoted total ${JSON.stringify(quote.total_requested)} for ${quote.patch_id}. Restate the number the quote showed, exactly.`, { details: { quoted_total: quote.total_requested, you_said: a.confirm_total, total_with_bases: quote.total_with_bases } });
         }
         const item = quote.items.find((i) => i.role === 'requested');
         if (!item) throw fail('quote_mismatch', 'this quote has no requested item.');

@@ -137,3 +137,31 @@ test('a node that is not there is node_unreachable and retryable, not a crash', 
   assert.equal((data.error as Record<string, unknown>).code, 'node_unreachable');
   assert.equal((data.error as Record<string, unknown>).retryable, true);
 });
+
+test('get_training_set reads back the id create_training_set just handed out', async () => {
+  const h = await harness(fullEnv());
+  try {
+    const made = await h.call('create_training_set', { rows: [{ prompt: 'What is the ticker of Pixelplus?', answer: '087600', note: 'via MCP subgraph-mcp · execute_query_by_subgraph_id' }], name: 'from another MCP server' });
+    assert.equal(made.isError, false, JSON.stringify(made.data));
+    const id = String(made.data.dataset_id);
+    const back = await h.call('get_training_set', { id, rows: true });
+    assert.equal(back.isError, false, JSON.stringify(back.data));
+    assert.equal(back.data.kind, 'uploaded_training_set');
+    assert.equal(back.data.sha256, made.data.sha256);
+    const rows = back.data.rows as { prompt: string; note?: string }[];
+    assert.equal(rows.length, 1);
+    assert.match(String(rows[0]?.note), /subgraph-mcp/);   // the provenance line survives the round trip
+  } finally { await h.stop(); }
+});
+
+test('an id that is neither a knowledge nor an uploaded set says so, naming both places it looked', async () => {
+  const h = await harness(fullEnv());
+  try {
+    const out = await h.call('get_training_set', { id: 'ds_does_not_exist' });
+    assert.equal(out.isError, true);
+    const err = out.data.error as { code: string; message: string };
+    assert.equal(err.code, 'not_found');
+    assert.match(err.message, /neither a published knowledge .* nor a training set/);
+    assert.match(err.message, /my_library/);
+  } finally { await h.stop(); }
+});
