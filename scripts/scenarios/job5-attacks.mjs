@@ -77,7 +77,8 @@ export default async function ({ session, check, log, pollJob, REPO }) {
     p.on('exit', (code) => resolve({ code, err }));
     setTimeout(() => { p.kill('SIGKILL'); resolve({ code: null, err: `${err}(still listening)` }); }, 4000);
   });
-  const refused = await http({ AINIZE_NODE_URL: READ_NODE, AINIZE_OPERATOR_PASSWORD: 'e2e-pass-a', AINIZE_MCP_SESSION_BUDGET: '5' });
+  // the password only has to EXIST for the guard to fire; it is never used, and comes from the environment either way
+  const refused = await http({ AINIZE_NODE_URL: READ_NODE, AINIZE_OPERATOR_PASSWORD: process.env.AINIZE_OPERATOR_PASSWORD ?? 'not-the-real-one', AINIZE_MCP_SESSION_BUDGET: '5' });
   check('A14', 'a spendable server refuses to listen on a port without an explicit "I am the only user"', refused.code === 1 && /refuses to start/.test(refused.err), `exit ${refused.code}: ${refused.err.split('\n').filter(Boolean).pop()}`);
   const allowed = await http({ AINIZE_NODE_URL: READ_NODE });
   check('A15', 'a read-only server may listen on a port', allowed.code === null && /listening/.test(allowed.err), `${allowed.err.split('\n').filter(Boolean).pop()}`);
