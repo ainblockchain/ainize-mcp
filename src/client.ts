@@ -8,9 +8,7 @@
  *                request-bound AND single-use — the node's replay cache refuses a second verification of the same
  *                header — so a header is built per attempt and never cached or replayed.
  */
-import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
-import { signMessage } from '@ainize/core';
 import type { McpConfig, TeachKey } from './config.js';
 import { UnreachableError, UpstreamError } from './errors.js';
 
@@ -34,23 +32,14 @@ export interface RequestOptions {
 
 export interface RawResponse<T> { status: number; body: T; headers: Headers }
 
-const sha256 = (b: string) => createHash('sha256').update(b).digest('hex');
 
 /**
- * The string a v2 teaching-key header signs — mirrors `teachAuthMessage` in `packages/node/src/teach-auth.ts`.
- * Kept as a local 6-line copy rather than importing `@ainize/node`, whose index pulls the whole node server
- * (express, sqlite, the trainer) into an stdio process that only speaks HTTP. `test/auth.test.ts` holds the two
- * implementations to the same output.
+ * The v2 teaching-key signature. This used to be a hand-copied six-line duplicate, because importing it from
+ * `@ainize/node` pulled express, sqlite and the trainer into an stdio process that only speaks HTTP. It lives in
+ * `@ainize/core` now — one definition, no copy to keep honest.
  */
-export function teachAuthMessage(t: { node: string; method: string; path: string; ts: number; body?: string | null }): string {
-  const parts = ['teach', t.node, t.method.toUpperCase(), t.path, String(t.ts)];
-  if (t.body) parts.push(sha256(t.body));
-  return parts.join(':');
-}
-
-export function teachAuthHeader(key: TeachKey, t: { node: string; method: string; path: string; body?: string | null }, ts = Date.now()): string {
-  return `${key.address}:${ts}:${signMessage(teachAuthMessage({ ...t, ts }), key.privateKey)}:v2`;
-}
+import { teachAuthHeaderFor as teachAuthHeader } from '@ainize/core';
+export { teachAuthMessage, teachAuthHeaderFor as teachAuthHeader } from '@ainize/core';
 
 interface CacheEntry<T> { at: number; value: T }
 

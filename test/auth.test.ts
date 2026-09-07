@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { verifyMessage } from '@ainize/core';
-// the node's own implementation — this test is what keeps the local copy in client.ts honest
+// the node's own re-export — client.ts and the server now resolve to the same definition in core, and this
+// test is what catches it if either ever stops doing so
 import { teachAuthMessage as nodeMessage, teachAuthHeaderFor } from '@ainize/node';
 import { teachAuthHeader, teachAuthMessage } from '../src/client.js';
 import { parseTeachKey } from '../src/config.js';
