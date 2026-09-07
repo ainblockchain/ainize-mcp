@@ -18,21 +18,27 @@
  *     ledger is the shared AIN chain, and gated behind a confirmation phrase that contains the lesson id — so a
  *     model cannot approve it by pattern-matching "yes".
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { signMessage } from '@ngram/core';
 import { z } from 'zod';
 import type { Context } from '../context.js';
 import { fail, UpstreamError } from '../errors.js';
 import { modelLock, type NodeLock, type RawEntry } from '../format.js';
-import { canonicalJsonl, rowsSha256, sealProvenance, withProvenanceNotes, type RowProvenance, type TeachRow } from '../rows.js';
-import { teachJobView, TEACH_TERMINAL, type TeachJobRaw } from '../teach-view.js';
+import { canonicalJsonl, rowsSha256, sealProvenance, type TeachRow } from '../rows.js';
+import type { TeachJobRaw } from '../teach-view.js';
+// The lesson itself — upload → preflight → submit → poll, and the session's lesson allowance — lives in
+// `teach-run.ts`, so `packages/agent` runs THIS pipeline instead of a second copy of it. What stays here is what
+// is specific to being a tool: the schemas, the gates a human has to see, and the job handle.
+import {
+  assertLessonAllowance, datasetRows, lessonsToday, preflightView, PREFLIGHT_MAX, resolveCompare, runTeachLesson,
+  uploadTrainingSet, type PreflightAnswer, type TeachPolicy,
+} from '../teach-run.js';
 import { tool, type ToolDef } from './types.js';
 
 // The node's own caps (`packages/node/src/teach.ts`: PROMPT_MAX, ANSWER_MAX; the dataset note cap is 500).
 const PROMPT_MAX = 400;
 const ANSWER_MAX = 200;
-const PREFLIGHT_MAX = 8;
 
 const rowSchema = z.object({
   prompt: z.string().min(1).max(PROMPT_MAX).describe('the question, as a person would ask it'),
@@ -43,118 +49,6 @@ const rowSchema = z.object({
 
 const provenanceSchema = z.record(z.string(), z.unknown()).optional()
   .describe('where these rows came from, as produced by the MCP client side (server, tool, arguments, block, row hashes). Recorded as declared by the caller — this server cannot verify a claim it did not make itself.');
-
-interface DatasetCreateResult {
-  dataset: { id: string; sha256: string; revision: number; rows: number; invalid_rows: number; name: string; status: string; retention: string; size_bytes: number };
-  report: { summary: Record<string, number>; rows: { index: number | null; line: number; status: string; detail?: string; prompt?: string }[] };
-  created: boolean;
-}
-
-export interface UploadInput {
-  rows: TeachRow[];
-  name?: string;
-  retention?: 'keep' | 'delete_after_training';
-  provenance?: Record<string, unknown>;
-}
-
-/**
- * `POST /api/teach/datasets` (the JSON door — never multipart, whose signature has to cover a header instead of the
- * body). Exported because the direction-B example uploads through exactly this path: one code path, one set of
- * rules, one place to be wrong.
- */
-export async function uploadTrainingSet(ctx: Context, input: UploadInput): Promise<Record<string, unknown>> {
-  const prov = input.provenance as unknown as RowProvenance | undefined;
-  // Provenance rides on the rows themselves: the node's dataset API has no field for it yet (design §11.4), and a
-  // row's own `note` is the one place that survives training, publication and a buyer's download.
-  const stamped = prov?.server && prov?.tool && prov?.arguments_sha256
-    ? withProvenanceNotes(input.rows, prov as Parameters<typeof withProvenanceNotes>[1])
-    : input.rows;
-  const predicted = rowsSha256(stamped);
-  const out = await ctx.client.raw<DatasetCreateResult>('/api/teach/datasets', {
-    method: 'POST', auth: 'teach',
-    body: {
-      source: 'inline', rows: stamped,
-      ...(input.name ? { name: input.name.slice(0, 80) } : {}),
-      ...(input.retention ? { retention: input.retention } : {}),
-    },
-  });
-  const d = out.body.dataset;
-  // 'ok' | 'fixed' | 'pii' are the statuses that mean the question IS in rows.jsonl (core's ACCEPTED_ROW_STATUSES);
-  // everything else was refused, and the node reports why, per row, for all of them.
-  const accepted = new Set(['ok', 'fixed', 'pii']);
-  const rejected = out.body.report.rows.filter((r) => !accepted.has(r.status));
-  const stored = prov ? storeProvenance(ctx, d.id, { ...prov, dataset_id: d.id } as unknown as Record<string, unknown>) : null;
-  return {
-    dataset_id: d.id,
-    existing: !out.body.created,
-    name: d.name,
-    rows_accepted: d.rows,
-    rows_rejected: rejected.map((r) => ({ line: r.line, status: r.status, detail: r.detail ?? null, prompt: r.prompt ?? null })),
-    sha256: d.sha256,
-    revision: d.revision,
-    size_bytes: d.size_bytes,
-    retention: d.retention,
-    summary: out.body.report.summary,
-    predicted_sha256: predicted,
-    sha256_matches_prediction: predicted === d.sha256,
-    ...(prov
-      ? {
-          provenance: {
-            recorded: 'client-declared',
-            note_on_rows: stamped.filter((r) => r.note).length,
-            stored_at: stored,
-            note: 'the provenance line is written into each row\'s own note (the node has no provenance field yet) and the full record is kept beside this server\'s journal',
-          },
-        }
-      : {}),
-    note: out.body.created
-      ? 'a new training set was created on the node'
-      : 'these exact bytes were already on the node — the same training set is returned rather than a second copy (the node de-dupes by sha256)',
-  };
-}
-
-/** Keep the full provenance record next to the purchase journal, so a later publish can quote it. Best-effort. */
-function storeProvenance(ctx: Context, datasetId: string, record: Record<string, unknown>): string | null {
-  if (!ctx.cfg.stateDir) return null;
-  try {
-    const dir = join(resolve(ctx.cfg.stateDir), 'provenance');
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const path = join(dir, `${datasetId}.json`);
-    writeFileSync(path, JSON.stringify(record, null, 2), { mode: 0o600 });
-    return path;
-  } catch { return null; }
-}
-
-interface TeachPolicy {
-  enabled?: boolean; publish?: string; trainer?: string; backend?: string;
-  limits?: { facts_per_job?: number; jobs_per_key_per_day?: number; rows_per_job?: number; prompt_max?: number; answer_max?: number };
-  queue?: { depth?: number; max?: number };
-  shares?: { contributor?: number; lineage?: number };
-  /** Feature flag `teach.lineage`: absent on a node built before the flag existed, so it is never read as `false`. */
-  lineage?: boolean;
-  simulated_checks?: boolean;
-}
-
-/**
- * How many lessons this teaching key has left today, computed the way the node counts them: one per job created in
- * the current UTC day. There is no quota endpoint, so this is an estimate from the key's own job list — it is
- * reported as such, and it is never the only guard (the node refuses with `quota_key` regardless).
- */
-async function lessonsToday(ctx: Context): Promise<{ limit: number | null; used_today: number | null; remaining: number | null; note: string }> {
-  const policy = (await ctx.teachPolicy()) as TeachPolicy | null;
-  const limit = policy?.limits?.jobs_per_key_per_day ?? null;
-  try {
-    const mine = await ctx.client.request<{ items: { created_at: number }[] }>('/api/teach/jobs', { auth: 'teach' });
-    const day = new Date().toISOString().slice(0, 10);
-    const used = mine.items.filter((j) => new Date(j.created_at).toISOString().slice(0, 10) === day).length;
-    return {
-      limit, used_today: used, remaining: limit === null ? null : Math.max(0, limit - used),
-      note: 'counted from this key\'s own lessons today (UTC); the node also caps lessons per IP, which this cannot see',
-    };
-  } catch {
-    return { limit, used_today: null, remaining: null, note: 'the node did not answer the lesson list, so only the daily limit is known' };
-  }
-}
 
 /** What a base actually is, before anything is spent on it. Free reads. */
 async function describeBases(ctx: Context, ids: string[]): Promise<{ id: string; name: string | null; status: string | null; price: string | null; body_held: boolean | null; training_set: string | null; problem: string | null }[]> {
@@ -179,39 +73,6 @@ async function describeBases(ctx: Context, ids: string[]): Promise<{ id: string;
   }
   return out;
 }
-
-interface PreflightAnswer {
-  facts: { index: number; status: 'will_train' | 'already_known' | 'overlaps_listing' | 'invalid' | 'in_base' | 'base_conflict'; detail?: string; base_answer?: string }[];
-  trainable: number;
-  quota: { key_remaining: number; ip_remaining: number };
-  sampled?: { checked: number; of: number };
-}
-
-const preflightView = (rows: TeachRow[], out: PreflightAnswer) => ({
-  trainable: out.trainable,
-  checked: out.facts.length,
-  ...(out.sampled ? { sampled: { ...out.sampled, note: 'a sample of the training set, not the whole of it — the node probes at most 8 questions per call' } } : {}),
-  items: out.facts.map((f) => ({
-    question: rows[f.index]?.prompt ?? `#${f.index}`,
-    expected: rows[f.index]?.answer ?? null,
-    status: f.status,
-    model_said: f.base_answer ?? null,
-    detail: f.detail ?? null,
-    meaning: {
-      will_train: 'the model gets this wrong today — teaching it is worth a lesson',
-      already_known: 'the model already answers this correctly; training it would spend a lesson on nothing',
-      overlaps_listing: 'this exact question and answer is already sold on this node',
-      invalid: 'the question or answer breaks the node\'s rules (length, blocked topic, multi-line answer)',
-      in_base: 'the knowledge you are building on already answers this',
-      base_conflict: 'the knowledge you are building on answers this differently',
-    }[f.status] ?? f.status,
-  })),
-  // The node returns its DAILY LESSON counters here, not live-test units (`teach.quota()`), so the field is named
-  // for what it is. The units the preflight itself spends are the live-test bucket, charged to both the IP and the
-  // key, and the node does not report what is left of it.
-  lessons_left_today: { key: out.quota.key_remaining, address: out.quota.ip_remaining },
-  cost_note: 'this preflight spent free live-test units (one per three model calls, at least one), charged to this server\'s IP AND to the teaching key',
-});
 
 export function teachTools(ctx: Context): ToolDef[] {
   const tools: ToolDef[] = [];
@@ -313,7 +174,7 @@ export function teachTools(ctx: Context): ToolDef[] {
         if (!a.rows?.length === !a.dataset_id) throw fail('invalid_request', 'send either `rows` (the questions to teach) or a `dataset_id`, not both and not neither.');
         if ((a.base?.length ?? 0) === 2) throw fail('merge_not_available', 'combining two knowledges is a merge, and no node supports it yet — build on one of them.');
         if (a.mode === 'extend' && !a.base?.length) throw fail('invalid_request', 'mode "extend" is what "build on top of" means — pass `base` with the knowledge you are extending.');
-        const compare = [...new Set(a.compare_with ?? [])].filter((id) => !(a.base ?? []).includes(id));
+        const compare = resolveCompare(a.base, a.compare_with);
         if ([...new Set([...(a.base ?? []), ...compare])].length > 3) throw fail('invalid_request', 'the node loads at most 3 knowledges at once.');
 
         const bases = await describeBases(ctx, a.base ?? []);
@@ -321,10 +182,7 @@ export function teachTools(ctx: Context): ToolDef[] {
         if (blocked) throw fail(blocked.status === 'SUPERSEDED' ? 'base_retired' : 'base_rejected', `${blocked.id}: ${blocked.problem}`, { details: { base: blocked } });
 
         const lessons = await lessonsToday(ctx);
-        const sessionLeft = ctx.cfg.budget.teachJobs - ctx.lessonsSpent;
-        if (sessionLeft <= 0) {
-          throw fail('teach_quota_consumed', `this MCP server is configured to spend at most ${ctx.cfg.budget.teachJobs} lesson(s) per session and has spent ${ctx.lessonsSpent}. Raise AINIZE_MCP_MAX_TEACH_JOBS in the server's own configuration — no tool argument can raise it.`, { details: { session_cap: ctx.cfg.budget.teachJobs, spent: ctx.lessonsSpent } });
-        }
+        assertLessonAllowance(ctx);
         if (lessons.remaining !== null && lessons.remaining <= 1 && !a.confirm && !a.dry_run) {
           throw fail('confirmation_required', `this is the last lesson this teaching key has on ${ctx.client.url} today (${lessons.used_today} of ${lessons.limit} used), and a lesson that fails is not refunded. Show the human what will be taught, and pass confirm: true once they agree.`, { details: { lessons } });
         }
@@ -350,99 +208,35 @@ export function teachTools(ctx: Context): ToolDef[] {
         }
 
         const state = await ctx.client.request<{ lock: NodeLock | null; now: number; queue?: { running?: unknown; waiting?: number } }>('/api/chat/patches');
-        ctx.lessonsSpent += 1;   // reserved here: a second `teach` in the same turn must not slip past the session cap
         const job = ctx.jobs.start({
           kind: 'teach',
           summary: a.name ?? (a.dataset_id ? `teach ${a.dataset_id}` : `teach: ${rows[0]?.prompt.slice(0, 50) ?? ''}`),
-          run: async (signal) => {
-            // 1) rows in → a training set (the chat basket and an uploaded file are the same artifact from here on)
-            let datasetId = a.dataset_id;
-            let upload: Record<string, unknown> | null = null;
-            if (!datasetId) {
-              upload = await uploadTrainingSet(ctx, { rows, ...(a.name ? { name: a.name } : {}), ...(a.retention ? { retention: a.retention } : {}), ...(a.provenance ? { provenance: a.provenance } : {}) });
-              datasetId = String(upload.dataset_id);
-              if (Number(upload.rows_accepted) === 0) {
-                throw fail('dataset_empty', `none of the ${rows.length} row(s) survived the node's parser, so there is nothing to teach — see rows_rejected.`, { details: { upload } });
-              }
-            }
-
-            // 2) preflight: what does the model (and the base) already answer? A lesson that trains nothing is a
-            //    lesson wasted, and the node does not give it back.
-            let preflight: ReturnType<typeof preflightView> | null = null;
-            let known: { index: number; base_answer: string }[] = [];
-            if (!a.skip_preflight) {
-              const patchIds = [...new Set([...(a.base ?? []), ...compare])];
-              const out = await ctx.client.request<PreflightAnswer>('/api/teach/preflight', {
-                method: 'POST', auth: 'teach', signal, timeoutMs: 6 * 60_000,
-                body: { patch_ids: patchIds, dataset_id: datasetId, offset: 0, limit: PREFLIGHT_MAX },
-              }).catch((e) => {
-                // a preflight that cannot run (model busy, quota out) must not silently become "train everything"
-                throw e;
-              });
-              const probed = await datasetRows(ctx, datasetId, 0, out.facts.length);
-              preflight = preflightView(probed, out);
-              known = out.facts.filter((f) => f.status === 'already_known' && f.base_answer).map((f) => ({ index: f.index, base_answer: f.base_answer as string }));
-              if (out.trainable === 0) {
-                ctx.lessonsSpent = Math.max(0, ctx.lessonsSpent - 1);   // nothing was submitted, nothing was spent
-                throw fail('nothing_to_train', `every question probed is already answered correctly (or is already sold on this node), so submitting would burn one of this key's ${lessons.limit ?? 'daily'} lessons to train nothing. The per-question verdicts are in details.`, { details: { preflight, dataset_id: datasetId, ...(upload ? { upload } : {}) } });
-              }
-            }
-
-            // 3) submit. `base_ids` / `context_ids`, never the deprecated `builds_on_context`.
-            //
-            // A submission the node REFUSES costs nothing — no lesson is queued, no daily lesson is charged — so
-            // the session's own reservation has to come back, exactly as it does for `nothing_to_train`. Without
-            // this, a server capped at one lesson lost its only allowance to a `quota_key` refusal, and every
-            // later attempt in that session was told the cap was spent when nothing had been.
-            const created = await ctx.client.raw<{ job: TeachJobRaw; quota: Record<string, number> }>('/api/teach/jobs', {
-              method: 'POST', auth: 'teach', signal, timeoutMs: 60_000,
-              body: {
-                dataset_id: datasetId,
-                ...(a.base?.length ? { base_ids: a.base } : {}),
-                ...(compare.length ? { context_ids: compare } : {}),
-                ...(a.mode ? { mode: a.mode } : {}),
-                ...(a.inherit !== undefined ? { inherit: a.inherit } : {}),
-                ...(a.export ? { export: a.export } : {}),
-                ...(a.force !== undefined ? { force: a.force } : {}),
-                ...(known.length ? { known } : {}),
-                ...(a.name ? { name: a.name } : {}),
-                ...(a.credit_name ? { contributor: { name: a.credit_name } } : {}),
-                training: { effort: a.effort ?? 'balanced', ...(a.rows_limit ? { rows_limit: a.rows_limit } : {}) },
-              },
-            }).catch((err: unknown) => {
-              ctx.lessonsSpent = Math.max(0, ctx.lessonsSpent - 1);   // the node never queued it: nothing was spent
-              throw err;
-            });
-            const nodeJob = created.body.job;
-            ctx.jobs.attach(job.id, { teach_job_id: nodeJob.id });
-            ctx.jobs.observe(job.id, nodeJob.status);
-
-            // 4) poll the node's own state machine until it stops moving
-            let last = nodeJob;
-            while (!TEACH_TERMINAL.includes(last.status)) {
-              if (signal.aborted) break;
-              // NOT unref'd: a lesson in flight is work this process owes the caller, and a server whose only
-              // pending work is a running lesson must not let the event loop drain out from under it.
-              await new Promise((r) => setTimeout(r, ctx.cfg.pollMs));
-              if (signal.aborted) break;
-              const cur = await ctx.client.request<{ job: TeachJobRaw }>(`/api/teach/jobs/${encodeURIComponent(nodeJob.id)}`, { auth: 'teach', signal }).catch(() => null);
-              if (!cur?.job) continue;
-              last = cur.job;
-              ctx.jobs.observe(job.id, last.status);
-            }
-            const view = {
-              ...teachJobView(last, { canPublish: ctx.cfg.allow.publish && ctx.client.hasTeachKey, nodeUrl: ctx.client.url }),
-              ...(preflight ? { preflight } : {}),
-              ...(upload ? { training_set_upload: upload } : {}),
-              quota: created.body.quota,
-            };
-            // A lesson that failed still cost one of the day's lessons: the node charges at submit, before it runs.
-            // Say so, and never retry by ourselves — spending another one is the human's decision.
-            if (['FAILED', 'REJECTED', 'EXPIRED'].includes(last.status)) {
-              throw fail('teach_quota_consumed', `the lesson ended ${last.status}: ${last.error ?? last.reject_reason ?? 'no reason recorded'}. It still spent one of this key's daily lessons — the node charges at submit time and does not refund. Do not retry automatically; decide with the human whether to spend another.`, { details: view });
-            }
-            return view;
-          },
+          // One lesson, start to finish, in `teach-run.ts`. The session's lesson is reserved INSIDE it, before its
+          // first await — `jobs.start` calls this synchronously — so the handle returned below already counts it,
+          // exactly as it did when the reservation was a line up here.
+          run: async (signal) => runTeachLesson(ctx, {
+            rows,
+            dataset_id: a.dataset_id,
+            base: a.base,
+            compare_with: compare,
+            mode: a.mode,
+            inherit: a.inherit,
+            export: a.export,
+            force: a.force,
+            effort: a.effort,
+            rows_limit: a.rows_limit,
+            name: a.name,
+            credit_name: a.credit_name,
+            retention: a.retention,
+            provenance: a.provenance,
+            skip_preflight: a.skip_preflight,
+            lessons,
+          }, {
+            signal,
+            // The node's own lesson id and its state, written into the job table so `job_status`, `job_cancel` and
+            // `download_lesson` can find a lesson that was submitted from inside a job.
+            onState: ({ teach_job_id, status }) => { ctx.jobs.attach(job.id, { teach_job_id }); ctx.jobs.observe(job.id, status); },
+          }),
         });
 
         return {
@@ -658,14 +452,7 @@ function resolveLessonId(ctx: Context, id: string): string {
   return nodeId ?? id;
 }
 
-/** The questions the node actually probed, so a preflight verdict is shown next to its own question. */
-async function datasetRows(ctx: Context, datasetId: string, offset: number, limit: number): Promise<TeachRow[]> {
-  if (limit <= 0) return [];
-  const out = await ctx.client.request<{ items: { prompt?: string; answer?: string; status: string }[] }>(
-    `/api/teach/datasets/${encodeURIComponent(datasetId)}/rows?offset=${offset}&limit=${Math.min(200, Math.max(1, limit))}&status=ok`,
-    { auth: 'teach' },
-  ).catch(() => ({ items: [] as { prompt?: string; answer?: string }[] }));
-  return out.items.map((r) => ({ prompt: r.prompt ?? '', answer: r.answer ?? '' }));
-}
-
+// Kept exported from here because `index.ts` and the direction-B example have always imported them from this
+// module; the implementations now live one file over.
 export { canonicalJsonl, sealProvenance };
+export { uploadTrainingSet, type UploadInput } from '../teach-run.js';
