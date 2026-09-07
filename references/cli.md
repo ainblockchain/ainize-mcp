@@ -27,9 +27,9 @@ Not exposed as MCP tools at all, on purpose — minutes-long, network-visible or
 
 ## Credentials, from a terminal
 
-- Operator: `ainize login` writes a session token to `<NGRAM_HOME>/cli.json` at mode 0600; `NGRAM_TOKEN` overrides.
-- Teaching key: `<NGRAM_HOME>/teaching-key.json`, `NGRAM_TEACH_KEY`, or `--key-file <backup.json>` (the browser's
+- Operator: `ainize login` writes a session token to `<AINIZE_HOME>/cli.json` at mode 0600; `AINIZE_TOKEN` overrides.
+- Teaching key: `<AINIZE_HOME>/teaching-key.json`, `AINIZE_TEACH_KEY`, or `--key-file <backup.json>` (the browser's
   backup file).
-- Node identity: `<NGRAM_HOME>/config.json` — it **is** the money. `ainize keys backup` before publishing anything.
+- Node identity: `<AINIZE_HOME>/config.json` — it **is** the money. `ainize keys backup` before publishing anything.
 
 The MCP server reads its own copies from its own environment and never accepts, prints or returns any of them.

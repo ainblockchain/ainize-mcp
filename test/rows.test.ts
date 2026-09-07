@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 // the node's own implementation — this is what keeps the local copy in src/rows.ts honest
-import { canonicalJsonl as nodeJsonl, normalizeRow as nodeNormalize, sha256Rows as nodeSha } from '@ngram/node';
+import { canonicalJsonl as nodeJsonl, normalizeRow as nodeNormalize, sha256Rows as nodeSha } from '@ainize/node';
 import {
   argumentsSha256, canonicalJsonl, mapRows, normalizeTeachRow, promptKey, provenanceNote, rowHashes, rowsSha256,
   sealProvenance, stableJson, withProvenanceNotes, type RowMapping, type TeachRow,

@@ -64,7 +64,7 @@ const sha256 = (s: string): string => createHash('sha256').update(s, 'utf8').dig
 
 /**
  * The control / bidi / zero-width class `packages/node/src/teach-dataset.ts` strips from every dataset field. Copied
- * rather than imported: `@ngram/node`'s entry point pulls express, sqlite and the trainer into a process that only
+ * rather than imported: `@ainize/node`'s entry point pulls express, sqlite and the trainer into a process that only
  * speaks HTTP. `test/rows.test.ts` proves the copy still matches.
  */
 const CONTROLS = new RegExp('[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f\\u00ad\\u034f\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ufeff\\ufff9-\\ufffb]', 'g');

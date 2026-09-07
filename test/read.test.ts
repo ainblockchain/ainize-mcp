@@ -175,7 +175,7 @@ test('a private draft this server owns is readable — it holds the credential t
     assert.equal(out.isError, false, JSON.stringify(out.data));
     assert.equal((out.data.knowledge as { status: string }).status, 'DRAFT');
     const asked = h.fake.requests.filter((r) => r.path === '/api/patches/my-private-draft');
-    assert.ok(asked.some((r) => r.headers.authorization || r.headers['x-ngram-auth']), 'the read must present a credential');
+    assert.ok(asked.some((r) => r.headers.authorization || r.headers['x-ainize-auth']), 'the read must present a credential');
   } finally { await h.stop(); }
 });
 

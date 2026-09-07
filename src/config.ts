@@ -8,7 +8,7 @@
  * one, no result returns one, and `publicSummary()` is what the model is allowed to know about them (booleans).
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { identityFromPrivateKey } from '@ngram/core';
+import { identityFromPrivateKey } from '@ainize/core';
 import { normalizeAmount } from './dec.js';
 
 export interface TeachKey { privateKey: string; address: string }

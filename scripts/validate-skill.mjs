@@ -61,7 +61,7 @@ const CREDENTIAL_PATTERNS = [
   [/\b0x[0-9a-fA-F]{64}\b/, 'a 64-hex private-key-shaped literal'],
   [/\b[0-9a-f]{64}\b/, 'a 64-hex secret-shaped literal', HASH_CONTEXT],
   [/Bearer\s+[A-Za-z0-9._-]{16,}/, 'a bearer token'],
-  [/x-ngram-auth:\s*0x[0-9a-fA-F]{40}:\d+:0x[0-9a-fA-F]+/, 'a teaching-key signature'],
+  [/x-ainize-auth:\s*0x[0-9a-fA-F]{40}:\d+:0x[0-9a-fA-F]+/, 'a teaching-key signature'],
   [/[?&]token=[A-Za-z0-9._-]{8,}/, 'a download token'],
   [/AINIZE_OPERATOR_PASSWORD=(?!\$|\{|["']?\$)\S+/, 'a literal operator password'],
 ];

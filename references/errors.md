@@ -72,7 +72,7 @@ Two of them are worth special handling:
 ## Redaction
 
 Every result and every error passes through an outbound scrubber before it leaves the server: key-shaped values
-(a 64-hex string, a `Bearer …`, an `x-ngram-auth` triple, a `?token=` query credential), fields named like
+(a 64-hex string, a `Bearer …`, an `x-ainize-auth` triple, a `?token=` query credential), fields named like
 credentials, and the configured secrets themselves are replaced with `[redacted]`. `tx_hash`, `sha256`, `address`
 and `record_hash` are allow-listed so a receipt stays readable — an AIN transaction hash has exactly a private key's
 shape, and redacting it would make the money untraceable.

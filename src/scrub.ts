@@ -10,7 +10,7 @@
  * Two rules, in this order:
  *   1. keys are redacted by NAME (`privateKey`, `token`, `download_token`, `sig`, …), whatever they contain;
  *   2. remaining strings are scanned for shapes that are always secret (`0x`+64 hex — a private key or a signature;
- *      `Bearer …`; an `x-ngram-auth` triple) and for the configured secrets by literal match.
+ *      `Bearer …`; an `x-ainize-auth` triple) and for the configured secrets by literal match.
  *
  * `KEEP_KEYS` is the deliberate exception: a tx hash, a record hash and a blob sha ARE public ledger facts and an
  * agent needs them to reconcile a purchase. On the AIN chain a tx hash has exactly the shape of a private key, so
@@ -18,7 +18,7 @@
  */
 const SECRET_KEYS = new Set([
   'privatekey', 'private_key', 'password', 'operator_password', 'token', 'session', 'session_token', 'download_token',
-  'authorization', 'x-ngram-auth', 'auth', 'sig', 'signature', 'claim_sig', 'secret', 'api_key', 'apikey',
+  'authorization', 'x-ainize-auth', 'auth', 'sig', 'signature', 'claim_sig', 'secret', 'api_key', 'apikey',
   'teach_key', 'teaching_key', 'mnemonic', 'seed', 'manifest',
 ]);
 
@@ -36,7 +36,7 @@ export const REDACTED = '[redacted]';
 const PATTERNS: RegExp[] = [
   /0x[0-9a-fA-F]{64,}/g,            // a private key or a secp256k1 signature
   /Bearer\s+[A-Za-z0-9._~+/=-]+/gi, // an operator session
-  /0x[0-9a-fA-F]{40}:\d{10,}:[^\s"']+/g, // an x-ngram-auth triple (address:ts:sig[:v2])
+  /0x[0-9a-fA-F]{40}:\d{10,}:[^\s"']+/g, // an x-ainize-auth triple (address:ts:sig[:v2])
   // A download link's `?token=` IS a credential: it opens a private draft's knowledge file for anyone holding it.
   // The node hands them out in `npz_url` / `recipe_url` / `readme_url`, which no key-name rule would catch.
   /([?&](?:token|download_token|api_key|apikey|access_token|key)=)[^&\s"']+/gi,

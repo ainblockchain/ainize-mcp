@@ -240,10 +240,10 @@ export class FakeNode {
     // ---- teach ------------------------------------------------------------------------------------------------
     // Every teach route is signed. The fake checks only that a v2 header is PRESENT and shaped right; `auth.test.ts`
     // is what holds the signature itself to the node's own implementation.
-    const signed = () => /^0x[0-9a-fA-F]{40}:\d+:.+:v2$/.test(String(req.headers['x-ngram-auth'] ?? ''));
+    const signed = () => /^0x[0-9a-fA-F]{40}:\d+:.+:v2$/.test(String(req.headers['x-ainize-auth'] ?? ''));
 
     if (pathname === '/api/teach/datasets' && req.method === 'POST') {
-      if (!signed()) return json(401, { error: 'invalid_signature: x-ngram-auth header missing' });
+      if (!signed()) return json(401, { error: 'invalid_signature: x-ainize-auth header missing' });
       if (s.datasetFail) return json(s.datasetFail.status, s.datasetFail.body);
       const b = (body ?? {}) as { rows?: { prompt: string; answer: string; note?: string }[]; name?: string };
       const rows = (b.rows ?? []).filter((r) => r.prompt && r.answer);
@@ -267,14 +267,14 @@ export class FakeNode {
     }
     const dsOne = /^\/api\/teach\/datasets\/([^/]+)$/.exec(pathname);
     if (dsOne && req.method === 'GET') {
-      if (!signed()) return json(401, { error: 'invalid_signature: x-ngram-auth header missing' });
+      if (!signed()) return json(401, { error: 'invalid_signature: x-ainize-auth header missing' });
       const d = this.datasets.get(decodeURIComponent(dsOne[1] as string));
       if (!d) return json(404, { error: 'dataset_not_found: no such dataset on this node' });
       return json(200, { dataset: { id: d.id, name: d.name, sha256: d.sha256, rows: d.rows.length, invalid_rows: 0, status: 'ready', source: 'chat', retention: 'keep', revision: 1, job_ids: [], created_at: 1788000000000, expires_at: 1788600000000 } });
     }
     const dsRows = /^\/api\/teach\/datasets\/([^/]+)\/rows$/.exec(pathname);
     if (dsRows) {
-      if (!signed()) return json(401, { error: 'invalid_signature: x-ngram-auth header missing' });
+      if (!signed()) return json(401, { error: 'invalid_signature: x-ainize-auth header missing' });
       const d = this.datasets.get(decodeURIComponent(dsRows[1] as string));
       if (!d) return json(404, { error: 'dataset_not_found: no such dataset on this node' });
       const offset = Number(q.get('offset') ?? 0); const limit = Number(q.get('limit') ?? 50);
@@ -282,7 +282,7 @@ export class FakeNode {
       return json(200, { total: d.rows.length, source_rows: d.rows.length, offset, limit, summary: {}, items: page.map((r, i) => ({ index: offset + i, line: offset + i + 1, status: 'ok', prompt: r.prompt, answer: r.answer, ...(r.note ? { note: r.note } : {}) })) });
     }
     if (pathname === '/api/teach/preflight') {
-      if (!signed()) return json(401, { error: 'invalid_signature: x-ngram-auth header missing' });
+      if (!signed()) return json(401, { error: 'invalid_signature: x-ainize-auth header missing' });
       if (s.preflightFail) return json(s.preflightFail.status, s.preflightFail.body);
       const b = (body ?? {}) as { facts?: { prompt: string }[]; dataset_id?: string; limit?: number };
       const n = b.facts?.length ?? Math.min(b.limit ?? 8, this.datasets.get(b.dataset_id ?? '')?.rows.length ?? 0);
@@ -297,7 +297,7 @@ export class FakeNode {
       });
     }
     if (pathname === '/api/teach/jobs' && req.method === 'POST') {
-      if (!signed()) return json(401, { error: 'invalid_signature: x-ngram-auth header missing' });
+      if (!signed()) return json(401, { error: 'invalid_signature: x-ainize-auth header missing' });
       if (s.jobFail) return json(s.jobFail.status, s.jobFail.body);
       const b = (body ?? {}) as Record<string, unknown>;
       const id = `lesson-${this.lessons.size + 1}`;
@@ -306,7 +306,7 @@ export class FakeNode {
       return json(202, { job: this.lesson(id), quota: { key_remaining: Math.max(0, s.jobsPerKeyPerDay - s.lessonsUsedToday), ip_remaining: 5, rows_remaining: 300, rows_ip_remaining: 500 } });
     }
     if (pathname === '/api/teach/jobs' || pathname === '/api/teach/datasets') {
-      if (!signed()) return json(401, { error: 'invalid_signature: x-ngram-auth header missing' });
+      if (!signed()) return json(401, { error: 'invalid_signature: x-ainize-auth header missing' });
       if (pathname === '/api/teach/datasets') return json(200, { items: [...this.datasets.values()].map((d) => ({ id: d.id, name: d.name, rows: d.rows.length, sha256: d.sha256, created_at: Date.now(), retention: 'keep' })) });
       // `lessonsToday` counts today's rows out of this list, so the fake reports exactly that many
       return json(200, { items: Array.from({ length: s.lessonsUsedToday }, (_, i) => ({ id: `lesson-${i + 1}`, status: 'READY', created_at: Date.now() })) });

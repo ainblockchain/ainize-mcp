@@ -20,7 +20,7 @@
  */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { signMessage } from '@ngram/core';
+import { signMessage } from '@ainize/core';
 import { z } from 'zod';
 import type { Context } from '../context.js';
 import { fail, UpstreamError } from '../errors.js';

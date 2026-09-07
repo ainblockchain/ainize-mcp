@@ -1,7 +1,7 @@
 /**
  * Decimal-string money arithmetic.
  *
- * Prices in this product are strings (`"0"`, `"0.1"`, `"25"` — `PRICE_RE` in `@ngram/core`) and the money contract
+ * Prices in this product are strings (`"0"`, `"0.1"`, `"25"` — `PRICE_RE` in `@ainize/core`) and the money contract
  * compares a quoted total with what the agent restated by STRING EQUALITY (design §6.1). Parsing those strings into
  * JS numbers would make `0.1 + 0.2` a budget decision, so every sum, comparison and cap check here runs on scaled
  * BigInts and comes back as a canonical string.

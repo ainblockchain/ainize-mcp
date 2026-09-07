@@ -1,4 +1,4 @@
-# `@ngram/mcp` — Ainize as an MCP server, and as an MCP client
+# `@ainize/mcp` — Ainize as an MCP server, and as an MCP client
 
 `ainize-mcp` puts the Ainize knowledge marketplace behind the Model Context Protocol, so Claude Code, Cursor and any
 other MCP client can do the five things the product exists for:
@@ -156,7 +156,7 @@ same object shape — a commented, ready-to-paste version of both blocks is in
 |---|---|---|---|
 | **node-u** | `http://localhost:3422` | `local` | everything — the default in every example |
 | node-a / b / c | `:3402` `:3403` `:3404` | **`ain` (shared chain)** | reading, quoting and live tests |
-| a private cluster | `NGRAM_CLUSTER_HOME=<tmpdir> NGRAM_PORT_BASE=3512 NGRAM_LEDGER=local NGRAM_SEED=0 scripts/cluster-restart.sh` | `local` | end-to-end money tests |
+| a private cluster | `AINIZE_CLUSTER_HOME=<tmpdir> AINIZE_PORT_BASE=3512 AINIZE_LEDGER=local AINIZE_SEED=0 scripts/cluster-restart.sh` | `local` | end-to-end money tests |
 
 **All of them share one model server** (`http://localhost:8002`). A live test run from an MCP client is therefore
 visible to every other node on the machine, and anything *applied* changes the "before" column of everyone else's
@@ -852,7 +852,7 @@ local-ledger cluster**, never at the demo cluster or the shared AIN chain.
 | Symptom | Cause | What to do |
 |---|---|---|
 | The client shows **0 tools** | the server started but the node did not answer | check `AINIZE_NODE_URL`; `curl $AINIZE_NODE_URL/api/info`. Read tools register even when the node is down, so 0 tools means the process itself failed — run `node packages/mcp/dist/bin.js --help` by hand and read stderr |
-| The stdio handshake **hangs or garbles** | something printed to stdout before the transport connected | this server guards stdout before importing anything (`@ngram/core` prints `secp256k1 unavailable` on import). If you add an import that prints, that guard is why the handshake still works |
+| The stdio handshake **hangs or garbles** | something printed to stdout before the transport connected | this server guards stdout before importing anything (`@ainize/core` prints `secp256k1 unavailable` on import). If you add an import that prints, that guard is why the handshake still works |
 | **`teach` is missing** | no teaching key, or the node runs no teach worker | set `AINIZE_TEACH_KEY`; `node_status` → `capability_reasons.can_teach` says which |
 | **`buy` is missing** | the session budget is `0` (the default), or no operator credential | set `AINIZE_MCP_SESSION_BUDGET` **and** `AINIZE_OPERATOR_PASSWORD` / `AINIZE_TOKEN`. Buying is operator-gated on the node itself |
 | **`publish_knowledge` is missing** | it is opt-in | `AINIZE_MCP_ALLOW_PUBLISH=1`, and on an AIN-chain node also `AINIZE_MCP_ALLOW_AIN_PUBLISH=1` (think first: nothing on that chain can be recalled) |

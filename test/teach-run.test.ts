@@ -4,7 +4,7 @@
  * before the upload, given back only where the node queued nothing, and kept when the node accepted the lesson and
  * the lesson then failed.
  *
- * The second half pins the seam itself: `@ngram/mcp/client` and `@ngram/mcp/money` exist, `.` is untouched, and
+ * The second half pins the seam itself: `@ainize/mcp/client` and `@ainize/mcp/money` exist, `.` is untouched, and
  * neither subpath's static import graph reaches the MCP server, the tool definitions or express.
  */
 import { test } from 'node:test';
@@ -216,10 +216,10 @@ test('the client seam carries the pieces the agent was told to reuse rather than
     'runTeachLesson', 'uploadTrainingSet', 'lessonsToday', 'reserveLesson',
     'teachJobView', 'TEACH_TERMINAL',
   ]) {
-    assert.ok(name in seam, `@ngram/mcp/client must export ${name}`);
+    assert.ok(name in seam, `@ainize/mcp/client must export ${name}`);
   }
   const money = await import('../src/money.js');
   for (const name of ['addAmounts', 'cmpAmounts', 'normalizeAmount', 'subAmounts', 'Budget', 'PurchaseJournal']) {
-    assert.ok(name in money, `@ngram/mcp/money must export ${name}`);
+    assert.ok(name in money, `@ainize/mcp/money must export ${name}`);
   }
 });

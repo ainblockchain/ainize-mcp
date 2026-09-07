@@ -7,7 +7,7 @@
  *
  * Configuration is env or `--config <file>`, never a tool argument (design §3.3, §8). In stdio mode stdout IS the
  * protocol channel: every diagnostic goes to stderr, and `guardStdout()` below catches the one thing this package
- * cannot control — a dependency printing at import time (`@ngram/core` → ain-util prints "secp256k1 unavailable,
+ * cannot control — a dependency printing at import time (`@ainize/core` → ain-util prints "secp256k1 unavailable,
  * reverting to browser version" on stdout, which is enough to make a client fail to parse the handshake).
  */
 import { randomUUID } from 'node:crypto';
@@ -78,7 +78,7 @@ async function main(): Promise<void> {
   const stdout = guardStdout();
   if (args.help) { stdout(HELP); return; }
 
-  // Imported AFTER the stdout guard: `@ngram/core` prints on stdout the moment it loads.
+  // Imported AFTER the stdout guard: `@ainize/core` prints on stdout the moment it loads.
   const { loadConfig } = await import('./config.js');
   const { Context } = await import('./context.js');
   const { buildServer, SERVER_VERSION } = await import('./server.js');

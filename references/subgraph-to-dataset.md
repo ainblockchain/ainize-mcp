@@ -7,7 +7,7 @@ benchmark. This file is the seam, end to end.
 ## The seam
 
 ```ts
-import { McpDataSource } from '@ngram/mcp';
+import { McpDataSource } from '@ainize/mcp';
 
 const source = new McpDataSource({
   name: 'subgraph-mcp',

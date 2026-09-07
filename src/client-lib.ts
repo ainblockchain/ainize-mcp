@@ -1,5 +1,5 @@
 /**
- * `@ngram/mcp/client` — the client half of this package, importable without the MCP server.
+ * `@ainize/mcp/client` — the client half of this package, importable without the MCP server.
  *
  * The `.` entry point exists to BE an MCP server: it registers every tool definition on the SDK's server object, and
  * `bin.ts` reaches for express to serve it. A CLI that only wants the pieces — the typed node client, the MCP data
@@ -9,8 +9,8 @@
  * creeps back in.
  *
  * It is a structural boundary, not a speed trick, and the measurement says so: importing this file costs 489 ms
- * against 510 ms for `.` on this machine, because 390 ms of both is `@ngram/core` loading its signing stack — which
- * a buying agent imports anyway. (`@ngram/mcp/money`, which needs neither, is 11 ms.)
+ * against 510 ms for `.` on this machine, because 390 ms of both is `@ainize/core` loading its signing stack — which
+ * a buying agent imports anyway. (`@ainize/mcp/money`, which needs neither, is 11 ms.)
  *
  * Everything here is re-exported, never redefined: this file adds no behaviour of its own.
  */

@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { verifyMessage } from '@ngram/core';
+import { verifyMessage } from '@ainize/core';
 // the node's own implementation — this test is what keeps the local copy in client.ts honest
-import { teachAuthMessage as nodeMessage, teachAuthHeaderFor } from '@ngram/node';
+import { teachAuthMessage as nodeMessage, teachAuthHeaderFor } from '@ainize/node';
 import { teachAuthHeader, teachAuthMessage } from '../src/client.js';
 import { parseTeachKey } from '../src/config.js';
 import { TEST_TEACH_KEY } from './harness.js';

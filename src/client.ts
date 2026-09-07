@@ -4,13 +4,13 @@
  * Three auth mechanisms, all held here and never exposed (design §8):
  *  - `none`      the public surface (catalog, patch detail, chat status, x402 quote);
  *  - `operator`  a bearer exchanged ONCE from the configured password via `POST /api/auth/login`, kept in memory;
- *  - `teach`     a per-request `x-ngram-auth` v2 signature from the visitor teaching key. v2 headers are
+ *  - `teach`     a per-request `x-ainize-auth` v2 signature from the visitor teaching key. v2 headers are
  *                request-bound AND single-use — the node's replay cache refuses a second verification of the same
  *                header — so a header is built per attempt and never cached or replayed.
  */
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
-import { signMessage } from '@ngram/core';
+import { signMessage } from '@ainize/core';
 import type { McpConfig, TeachKey } from './config.js';
 import { UnreachableError, UpstreamError } from './errors.js';
 
@@ -38,7 +38,7 @@ const sha256 = (b: string) => createHash('sha256').update(b).digest('hex');
 
 /**
  * The string a v2 teaching-key header signs — mirrors `teachAuthMessage` in `packages/node/src/teach-auth.ts`.
- * Kept as a local 6-line copy rather than importing `@ngram/node`, whose index pulls the whole node server
+ * Kept as a local 6-line copy rather than importing `@ainize/node`, whose index pulls the whole node server
  * (express, sqlite, the trainer) into an stdio process that only speaks HTTP. `test/auth.test.ts` holds the two
  * implementations to the same output.
  */
@@ -100,7 +100,7 @@ export class AinizeClient {
     if (opts.auth === 'teach' || (opts.auth === 'caller' && this.hasTeachKey)) {
       const key = this.cfg.teachKey;
       if (!key && opts.auth === 'teach') throw new UpstreamError(401, { error: 'invalid_signature: this MCP server has no teaching key configured (AINIZE_TEACH_KEY)' }, path);
-      if (key) headers['x-ngram-auth'] = teachAuthHeader(key, { node: await this.address(), method, path, body: bodyText });
+      if (key) headers['x-ainize-auth'] = teachAuthHeader(key, { node: await this.address(), method, path, body: bodyText });
     }
     const timeout = opts.timeoutMs ?? this.cfg.timeoutMs;
     const signals = [AbortSignal.timeout(timeout), ...(opts.signal ? [opts.signal] : [])];

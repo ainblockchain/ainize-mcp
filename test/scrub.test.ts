@@ -10,7 +10,7 @@ test('secrets planted anywhere in a result never come back out', () => {
     ok: true,
     manifest: { download_token: 'tok-123456', patch_sha256: 'c'.repeat(64) },
     nested: [{ privateKey: PRIVATE_KEY, note: `signed with ${PRIVATE_KEY}` }],
-    headers: { authorization: 'Bearer abcdef0123456789', 'x-ngram-auth': '0x1111111111111111111111111111111111111111:1788000000000:0xdeadbeef:v2' },
+    headers: { authorization: 'Bearer abcdef0123456789', 'x-ainize-auth': '0x1111111111111111111111111111111111111111:1788000000000:0xdeadbeef:v2' },
     error: `login failed for password ${PASSWORD}`,
     quote: { price: '5', pay_to: '0x2222222222222222222222222222222222222222' },
   }, { secrets: [PASSWORD] });

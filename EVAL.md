@@ -15,7 +15,7 @@ claude mcp add ainize -e AINIZE_NODE_URL=http://localhost:3422 -e AINIZE_TEACH_K
 Money and publish evals need a **private local-ledger cluster**, never node-a/b/c and never the AIN chain:
 
 ```bash
-NGRAM_CLUSTER_HOME=$(mktemp -d) NGRAM_PORT_BASE=3952 NGRAM_LEDGER=local NGRAM_SEED=0 scripts/cluster-restart.sh
+AINIZE_CLUSTER_HOME=$(mktemp -d) AINIZE_PORT_BASE=3952 AINIZE_LEDGER=local AINIZE_SEED=0 scripts/cluster-restart.sh
 # … run the evals …            (same env, plus --stop, when finished)
 ```
 

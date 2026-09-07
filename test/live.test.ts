@@ -154,7 +154,7 @@ test('a server holding the node\'s operator credential is not metered as an anon
     const chat = h.fake.requests.filter((r) => r.path === '/api/chat');
     assert.equal(chat.length, 1);
     assert.ok(chat[0]?.headers.authorization, 'the live test must present the operator bearer it holds');
-    assert.ok(chat[0]?.headers['x-ngram-auth'], 'and the teaching signature, so its own private drafts stay testable');
+    assert.ok(chat[0]?.headers['x-ainize-auth'], 'and the teaching signature, so its own private drafts stay testable');
     assert.ok(h.fake.requests.filter((r) => r.path.startsWith('/api/chat/status')).every((r) => r.headers.authorization), 'a ticket made as the operator has to be polled as the operator');
     const q = (status.data.result as { quota: Record<string, unknown> }).quota;
     assert.equal(q.metered, true);   // the fake node still answers with a limit; a real one answers null for an operator

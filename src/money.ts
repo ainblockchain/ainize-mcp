@@ -13,7 +13,7 @@ import { addAmounts, cmpAmounts, normalizeAmount, subAmounts } from './dec.js';
 import { fail } from './errors.js';
 
 /**
- * Re-exported so `@ngram/mcp/money` is the one place a caller outside this package gets money arithmetic from.
+ * Re-exported so `@ainize/mcp/money` is the one place a caller outside this package gets money arithmetic from.
  * The agent's four daily budgets are held to the same scaled-BigInt rule as a purchase: `0.1 + 0.2` must never be
  * a budget decision, in any of the four units. Importing the package ROOT for these would drag express and the MCP
  * server into a 200 ms CLI process, which is what the subpath export exists to avoid.
