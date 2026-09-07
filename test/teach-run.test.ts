@@ -17,7 +17,7 @@ import { Context } from '../src/context.js';
 import { ToolFailure } from '../src/errors.js';
 import { runTeachLesson, reserveLesson, resolveCompare, lessonsToday, type TeachLessonResult } from '../src/teach-run.js';
 import { FakeNode } from './fake-node.js';
-import { TEST_TEACH_KEY } from './harness.js';
+import { fullEnv, harness, TEST_TEACH_KEY } from './harness.js';
 
 const SRC = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'src');
 const PKG = resolve(SRC, '..', 'package.json');
@@ -148,6 +148,22 @@ test('rows the node\'s parser threw away are not trained on', async (t) => {
   assert.ok(err instanceof ToolFailure);
   assert.equal(err.body.code, 'dataset_empty');
   assert.equal(posts(fake, '/api/teach/jobs').length, 0);
+});
+
+test('the lesson is held before the first await, so two `teach` calls in one turn cannot both take the last one', async (t) => {
+  // The reservation used to sit in the tool handler, a line above `jobs.start`. It now lives inside
+  // `runTeachLesson`, which `jobs.start` calls synchronously — so it still lands before the handler builds its
+  // answer. This is the one thing the lift depends on, and a `start()` that ever deferred its `run` would break it
+  // silently: the handle would under-report, and a second decision in the same turn would slip past a spent cap.
+  const h = await harness(fullEnv({ AINIZE_MCP_MAX_TEACH_JOBS: '1', AINIZE_MCP_POLL_MS: '50' }));
+  t.after(h.stop);
+  const first = await h.call('teach', { rows: ROWS });
+  assert.equal(first.isError, false, JSON.stringify(first.data));
+  assert.equal((first.data.lessons as { session_spent: number }).session_spent, 1, 'the handle already counts the lesson it just held');
+  // the first lesson is still in flight — nothing has been awaited to completion
+  const second = await h.call('teach', { rows: ROWS });
+  assert.equal(second.isError, true);
+  assert.equal((second.data.error as { code: string }).code, 'teach_quota_consumed');
 });
 
 // ------------------------------------------------------------------ the seam
