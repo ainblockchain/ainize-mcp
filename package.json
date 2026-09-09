@@ -2,6 +2,7 @@
   "name": "@ainize/mcp",
   "version": "0.1.0",
   "private": true,
+  "description": "ainize-mcp \u2014 Ainize as an MCP server: search knowledge, prove it with a before/after live test, quote and buy it over x402, from Claude Code / Cursor / ChatGPT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,6 +20,9 @@
       "import": "./dist/money.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "bin": {
     "ainize-mcp": "./dist/bin.js",
     "ainize-subgraph-to-training-set": "./dist/examples/subgraph-to-training-set.js"
@@ -43,6 +47,5 @@
     "@types/node": "^24.10.0",
     "tsx": "^4.23.13",
     "typescript": "^5.9.3"
-  },
-  "description": "ainize-mcp \u2014 Ainize as an MCP server: search knowledge, prove it with a before/after live test, quote and buy it over x402, from Claude Code / Cursor / ChatGPT"
+  }
 }
