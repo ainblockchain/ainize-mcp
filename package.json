@@ -28,19 +28,20 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/bin.ts",
     "start": "node dist/bin.js",
-    "test": "node --test --import tsx test/*.test.ts"
+    "test": "node --test --import tsx test/*.test.ts",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@ainize/core": "0.1.0",
+    "@ainize/core": "github:ainblockchain/ainize-core",
     "express": "^5.2.1",
     "zod": "^4.5.4"
   },
   "devDependencies": {
-    "@ainize/node": "0.1.0",
+    "@ainize/node": "github:ainblockchain/ainize-node",
     "@types/express": "^5.0.6",
     "@types/node": "^24.10.0",
     "tsx": "^4.23.13"
   },
-  "description": "ainize-mcp — Ainize as an MCP server: search knowledge, prove it with a before/after live test, quote and buy it over x402, from Claude Code / Cursor / ChatGPT"
+  "description": "ainize-mcp \u2014 Ainize as an MCP server: search knowledge, prove it with a before/after live test, quote and buy it over x402, from Claude Code / Cursor / ChatGPT"
 }
