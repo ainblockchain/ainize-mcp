@@ -178,7 +178,7 @@ export function buildServer(ctx: Context): { server: McpServer; tools: ToolDef[]
     mimeType: 'application/json',
   }, async (uri) => {
     const doc = await ctx.client.request<Record<string, unknown>>('/api/openapi.json').catch(() => ({ error: 'the node did not answer' }));
-    const text = JSON.stringify({ _warning: 'This document is hand-written in packages/node/src/openapi.ts and omits the /api/patches/:id/dataset* and /p2p/dataset* routes. Do not generate tools from it.', ...doc }, null, 2);
+    const text = JSON.stringify({ _warning: 'This document is hand-written in ainize-node (src/openapi.ts) and omits the /api/patches/:id/dataset* and /p2p/dataset* routes. Do not generate tools from it.', ...doc }, null, 2);
     return { contents: [{ uri: uri.href, mimeType: 'application/json', text }] };
   });
 
