@@ -41,7 +41,8 @@
     "@ainize/node": "github:ainblockchain/ainize-node",
     "@types/express": "^5.0.6",
     "@types/node": "^24.10.0",
-    "tsx": "^4.23.13"
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3"
   },
   "description": "ainize-mcp \u2014 Ainize as an MCP server: search knowledge, prove it with a before/after live test, quote and buy it over x402, from Claude Code / Cursor / ChatGPT"
 }
