@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, cpSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, cpSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -101,8 +101,17 @@ test('the validator actually fails on a skill that is wrong', () => {
   assert.ok((validate(dir) as string[]).some((p) => p.includes('never links to it')), 'an unlinked reference must be caught');
 });
 
-test('the UX scenarios for the MCP work name evidence that exists', () => {
-  const repo = join(root, '..', '..');
+/**
+ * This one needs the whole product in one tree, which no checkout is any more: the scenarios live in
+ * ainize-node's `docs/`, and the evidence they cite is spread across `packages/…`, `docs/…` and `graph/…` —
+ * six repositories now. Point `AINIZE_MONOREPO` at a combined checkout to run it; skipped, never faked,
+ * where there is none, because a green tick for a check that did not happen is worse than a skip.
+ */
+test('the UX scenarios for the MCP work name evidence that exists', (t) => {
+  const repo = process.env.AINIZE_MONOREPO ?? join(root, '..', '..');
+  if (!existsSync(join(repo, 'docs', 'ux-test-scenarios.json'))) {
+    return t.skip('needs every repository in one tree — set AINIZE_MONOREPO to a combined checkout');
+  }
   const scenarios = JSON.parse(readFileSync(join(repo, 'docs', 'ux-test-scenarios.json'), 'utf8')) as {
     id: string; area: string; automation: string; evidence: string[];
   }[];
