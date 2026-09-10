@@ -89,6 +89,7 @@ export function moneyTools(ctx: Context): ToolDef[] {
           item.scheme = req.scheme; item.pay_to = req.payTo; item.nonce = req.nonce;
           if (cmpAmounts(req.maxAmountRequired, item.price) !== 0) {
             warnings.push(`the seller's 402 asks ${req.maxAmountRequired} ${req.asset} while the catalogue says ${item.price} — the binding number is the seller's`);
+            item.catalogue_price = item.price;
             item.price = normalizeAmount(req.maxAmountRequired, 'price');
           }
         }
@@ -192,9 +193,18 @@ export function moneyTools(ctx: Context): ToolDef[] {
         if (live.owned) throw fail('already_purchased', `this node is the seller of ${quote.patch_id} — it already holds the body and buying its own knowledge would pay itself. Nothing was charged.`, { details: { owned: true } });
         if (!live.quorum_ok) throw fail('not_listed_yet', `${quote.patch_id} is not listed yet (verification ${live.passed}/${live.quorum}) — the node itself would refuse this purchase.`);
         if (!live.sellable) throw fail('challenged', `${quote.patch_id} is locked by an open challenge; no price is honest while a verifier disputes the result.`);
+        /**
+         * "Has the listing changed since the quote?" — asked of the listing, not of the seller's binding number.
+         *
+         * `quote` deliberately replaces `item.price` with the seller's 402 price when the two disagree, and says so
+         * in a warning. Comparing THAT with the catalogue afterwards therefore reported `the price moved since the
+         * quote: 25 → 20` when nothing had moved at all: re-quoting reproduced it exactly, and any listing whose
+         * seller quotes off its catalogue entry could never be bought through this server.
+         */
         const livePrice = normalizeAmount(live.anchor.price, 'price');
-        if (cmpAmounts(livePrice, item.price) !== 0) {
-          throw fail('quote_mismatch', `the price moved since the quote: ${item.price} → ${livePrice} ${quote.currency}. Quote again and show the human the new number.`, { details: { quoted: item.price, now: livePrice } });
+        const quotedListing = item.catalogue_price ?? item.price;
+        if (cmpAmounts(livePrice, quotedListing) !== 0) {
+          throw fail('quote_mismatch', `the listing changed since the quote: ${quotedListing} → ${livePrice} ${quote.currency}. Quote again and show the human the new number.`, { details: { quoted: quotedListing, now: livePrice, will_pay: item.price } });
         }
 
         const maxPrice = a.max_price ? normalizeAmount(a.max_price, 'max_price') : undefined;

@@ -24,7 +24,17 @@ export interface QuoteItem {
   id: string;
   name: string;
   role: 'requested' | 'base';
+  /** What will be paid: the seller's binding 402 number when there was a handshake, else the catalogue's. */
   price: string;
+  /**
+   * What the CATALOGUE said when this was quoted, when that differs from `price`.
+   *
+   * The two are different numbers with different jobs: `price` is what the seller will charge, and this is the
+   * public record the buyer can re-read later to ask "did anything change since I quoted?". Comparing the binding
+   * price against the catalogue answers a question nobody asked and, whenever a seller quotes off its listing,
+   * never stops being true.
+   */
+  catalogue_price?: string;
   currency: string;
   status: string;
   superseded_by: string | null;
@@ -83,7 +93,9 @@ export class QuoteBook {
   private prune(): void { const t = this.now(); for (const [k, q] of this.quotes) if (q.expires_at + QUOTE_TTL_MS < t) this.quotes.delete(k); }
 }
 
-export interface BudgetView { cap: string; spent: string; reserved: string; remaining: string; currency: string; per_purchase_cap: string }
+export interface BudgetView { cap: string; spent: string; reserved: string; remaining: string; currency: string; per_purchase_cap: string;
+  /** Non-zero only when a settled purchase cost more than it reserved — an anomaly worth naming, not hiding in a negative. */
+  overspent?: string }
 
 /**
  * The session budget. Read from the server's own env and NEVER settable by a tool argument — a `max_price` argument
@@ -98,9 +110,30 @@ export class Budget {
   setCurrency(c: string): void { this.currency = c; }
   get enabled(): boolean { return cmpAmounts(this.cap, '0') > 0; }
   view(): BudgetView {
-    return { cap: this.cap, spent: this.spent, reserved: this.reserved, remaining: this.remaining, currency: this.currency, per_purchase_cap: this.perPurchase };
+    const over = this.overspent;
+    return { cap: this.cap, spent: this.spent, reserved: this.reserved, remaining: this.remaining, currency: this.currency, per_purchase_cap: this.perPurchase, ...(cmpAmounts(over, '0') > 0 ? { overspent: over } : {}) };
   }
-  get remaining(): string { return subAmounts(subAmounts(this.cap, this.spent), this.reserved); }
+  /**
+   * Never negative (item 380).
+   *
+   * `settle(actual)` books whatever was actually charged, which can exceed what was reserved — and this then
+   * returned a negative string that every caller treated as an amount. Fed back through `normalizeAmount` it
+   * throws a raw `AmountError` instead of the `budget_exceeded` a caller can act on, and printed to a human it
+   * reads as a budget that owes money. Zero is the truthful answer to "how much may I still spend"; the excess
+   * is reported separately, because a purchase that cost more than it reserved is worth seeing.
+   */
+  get remaining(): string {
+    const committed = addAmounts(this.spent, this.reserved);
+    // Compared before it is subtracted: `parseAmount` refuses a negative string, so building one and then testing
+    // it would throw exactly where this is meant to stop throwing.
+    return cmpAmounts(committed, this.cap) >= 0 ? '0' : subAmounts(this.cap, committed);
+  }
+
+  /** How far past the cap the spending actually went, or '0'. */
+  get overspent(): string {
+    const committed = addAmounts(this.spent, this.reserved);
+    return cmpAmounts(committed, this.cap) > 0 ? subAmounts(committed, this.cap) : '0';
+  }
 
   /** Check-and-hold, so two buys in flight cannot both squeeze past the same remaining budget. */
   reserve(amount: string, maxPrice?: string): { release: () => void; settle: (actual?: string) => void } {
