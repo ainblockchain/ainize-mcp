@@ -266,6 +266,17 @@ export async function runTeachLesson(ctx: Context, input: TeachLessonInput, hook
   const lessons = input.lessons;
   // Reserved here, before the first await: a second `teach` in the same turn must not slip past the session cap.
   const reservation = reserveLesson(ctx);
+  /**
+   * And given back on every path that did not queue a lesson (item 383).
+   *
+   * The two explicit refunds below cover `nothing_to_train` and a node that refused the submission — but the
+   * upload can throw (`dataset_empty`, a parser that rejects every row, a network error) and so can the
+   * pre-flight, and those paths simply kept the allowance. A caller whose first attempt failed on a typo in its
+   * rows had one fewer lesson for the rest of the session, spent on a lesson that never existed. `submitted` is
+   * the line the node draws — it charges at submit time, and only when it accepts.
+   */
+  let submitted = false;
+  try {
 
   // 1) rows in → a training set (the chat basket and an uploaded file are the same artifact from here on)
   let datasetId = input.dataset_id;
@@ -326,6 +337,9 @@ export async function runTeachLesson(ctx: Context, input: TeachLessonInput, hook
     throw err;
   });
   const nodeJob = created.body.job;
+  // From here the node has the lesson and has charged for it, so the reservation is genuinely spent: everything
+  // after this point may fail without giving it back.
+  submitted = true;
   onState?.({ teach_job_id: nodeJob.id, status: nodeJob.status });
 
   // 4) poll the node's own state machine until it stops moving
@@ -353,4 +367,9 @@ export async function runTeachLesson(ctx: Context, input: TeachLessonInput, hook
     throw fail('teach_quota_consumed', `the lesson ended ${last.status}: ${last.error ?? last.reject_reason ?? 'no reason recorded'}. It still spent one of this key's daily lessons — the node charges at submit time and does not refund. Do not retry automatically; decide with the human whether to spend another.`, { details: view });
   }
   return view;
+  } finally {
+    // Nothing was queued, so nothing was spent. After `submitted` this is a no-op, and the explicit refunds
+    // above have already released theirs — `reservation.refund()` is idempotent.
+    if (!submitted) reservation.refund();
+  }
 }
