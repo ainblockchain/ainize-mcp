@@ -135,6 +135,18 @@ export class Budget {
     return cmpAmounts(committed, this.cap) > 0 ? subAmounts(committed, this.cap) : '0';
   }
 
+  /**
+   * Resolve a hold whose `buy` call ended without knowing whether the money moved.
+   *
+   * The reservation object lives in that call's closure and is gone by the time `reconcile_purchase` finds out
+   * what happened, so the amount is named instead. `paid` books it as spent, anything else hands it back.
+   */
+  resolveHold(amount: string, paid: boolean): void {
+    const want = normalizeAmount(amount, 'amount');
+    this.reserved = cmpAmounts(this.reserved, want) > 0 ? subAmounts(this.reserved, want) : '0';
+    if (paid) this.spent = addAmounts(this.spent, want);
+  }
+
   /** Check-and-hold, so two buys in flight cannot both squeeze past the same remaining budget. */
   reserve(amount: string, maxPrice?: string): { release: () => void; settle: (actual?: string) => void } {
     const want = normalizeAmount(amount, 'price');
@@ -166,6 +178,8 @@ export type JournalState = 'intent' | 'complete' | 'failed';
 
 export interface JournalRow {
   key: string;
+  /** Set on a failure: true = the session budget is still holding this amount, pending reconciliation. */
+  budget_held?: boolean;
   state: JournalState;
   patch_id: string;
   quote_id: string;
@@ -222,11 +236,20 @@ export class PurchaseJournal {
     this.flush();
   }
 
-  markFailed(key: string, error: string): void {
+  /**
+   * `held` says whether the session's budget reservation is still standing for this row.
+   *
+   * A failure the node ANSWERED (4xx) decided before it charged, so the hold went back immediately. An abort, a
+   * timeout or a dropped connection did not decide anything — the purchase may be settling upstream — so the
+   * hold stays until `reconcile_purchase` asks the node what happened. Writing it down is what lets that command
+   * know whether it owes the budget a release or a settle.
+   */
+  markFailed(key: string, error: string, opts: { held?: boolean } = {}): void {
     const r = this.rows.get(key);
     if (!r) return;
     // NOT deleted: an `intent` that failed is exactly the case where money may already have moved (design §6.5).
     r.error = error;
+    if (opts.held !== undefined) r.budget_held = opts.held;
     this.flush();
   }
 

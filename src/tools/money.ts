@@ -243,8 +243,22 @@ export function moneyTools(ctx: Context): ToolDef[] {
               ctx.journal.complete(key, { tx_hash: out.tx_hash, amount: out.amount, result });
               return result;
             } catch (err) {
-              reservation.release();
-              ctx.journal.markFailed(key, (err as Error).message);
+              /**
+               * A failed `buy` is not the same as a `buy` that did not happen (item 385).
+               *
+               * The hold used to be released on every error — including an abort or a timeout, which are exactly
+               * the cases where the request DID leave this process and the node may be settling the purchase
+               * right now. Giving the allowance back then lets the session spend it twice: once on the purchase
+               * that is completing upstream and once on whatever it buys next.
+               *
+               * The journal is what resolves it: the row stays `intent`, `reconcile_purchase` asks the node what
+               * actually happened, and the hold is released or settled there. Only a refusal the node sent back —
+               * a 4xx, which means it decided before it charged — is definite enough to release here.
+               */
+              const refused = typeof (err as { status?: unknown }).status === 'number'
+                && (err as { status: number }).status >= 400 && (err as { status: number }).status < 500;
+              if (refused) reservation.release();
+              ctx.journal.markFailed(key, (err as Error).message, { held: !refused });
               throw err;
             }
           },
@@ -281,7 +295,20 @@ export function moneyTools(ctx: Context): ToolDef[] {
         const info = await ctx.nodeInfo();
         const purchases = await purchasesOf(ctx);
         const mine = purchases.get(id);
+        /**
+         * Whatever this finds, it also resolves the session budget (item 385).
+         *
+         * A `buy` that ended without an answer — an abort, a timeout — keeps its reservation, because the node
+         * may have been settling the purchase at that moment and giving the allowance back would let the session
+         * spend it twice. Nothing released it afterwards, so the hold stood for the rest of the session and the
+         * cap silently shrank by that amount. This is the command that learns which way it went, so it is the
+         * one that settles or releases.
+         */
+        const resolveHold = (paid: boolean) => {
+          if (row?.budget_held && row.amount) { ctx.budget.resolveHold(row.amount, paid); ctx.journal.markFailed(row.key, row.error ?? '', { held: false }); }
+        };
         if (mine) {
+          resolveHold(true);
           ctx.journal.complete(a.idempotency_key ?? PurchaseJournal.keyFor(row?.quote_id ?? id), { tx_hash: mine.tx_hash, amount: mine.amount });
           return {
             state: 'complete', id, purchase: { amount: mine.amount, scheme: mine.scheme, tx_hash: mine.tx_hash, bought_at: mine.created_at, body_present: !!mine.path },
@@ -291,15 +318,18 @@ export function moneyTools(ctx: Context): ToolDef[] {
         const ledger = await ctx.client.request<{ records: { body: { patch_id?: string; buyer?: string; amount?: string; tx_hash?: string; created_at?: number } }[] }>('/api/ledger?kind=settle&limit=1000');
         const settle = ledger.records.find((r) => r.body.patch_id === id && r.body.buyer?.toLowerCase() === info.address.toLowerCase());
         if (settle) {
+          resolveHold(true);   // the money moved; the body is what is missing
           return {
             state: 'settled_no_body', id, tx_hash: settle.body.tx_hash ?? null, amount: settle.body.amount ?? null,
             explanation: `The ledger shows this node already paid for ${id} (tx ${settle.body.tx_hash}), but no purchase row exists — the body download failed after the money moved. Do NOT buy again: a settled buyer keeps the right to fetch the body from any holder (GET /p2p/blob/:sha with a signature from this node's identity), and that right does not expire the way the manifest's 24 h download token does. Ask the node operator to re-fetch it, or use the node's own recovery path.`,
             next: 'this MCP server cannot sign for the node identity (design §8.1) — the re-fetch is the node operator\'s to run',
           };
         }
+        resolveHold(false);   // no purchase and no settlement: nothing was charged, so the hold goes back
         return {
           state: 'never_paid', id,
           explanation: `No purchase row and no settlement naming this node as buyer for ${id}: nothing was charged, and buying it is safe.`,
+          budget: ctx.budget.view(),
           journal: row ?? null,
         };
       },

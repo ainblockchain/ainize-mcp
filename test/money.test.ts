@@ -180,7 +180,7 @@ test('a price that moved under the quote stops the purchase', async (t) => {
   assert.equal((out.data.error as Record<string, unknown>).code, 'quote_mismatch');
 });
 
-test('a failed buy keeps its intent, releases the budget, and never retries', async (t) => {
+test('a buy that failed after the request went out keeps its intent AND its hold, and never retries', async (t) => {
   const h = await harness(fullEnv());
   t.after(h.stop);
   const q = await quoteOf(h);
@@ -190,12 +190,23 @@ test('a failed buy keeps its intent, releases the budget, and never retries', as
   const done = await h.call('job_status', { job_id: started.data.job_id as string, wait_ms: 5000 });
   assert.equal(done.data.state, 'failed');
   assert.ok(!JSON.stringify(done.data).includes('fake-session-token'), 'an upstream error body must not leak the session token');
-  assert.equal(h.ctx.budget.view().remaining, '10', 'a failed purchase releases its reservation');
+  // A 500 saying "blob download failed" is the node erroring AFTER it charged — which is why the journal keeps
+  // the intent, and why the hold has to stay with it. Releasing here, as this used to, let the session spend the
+  // same allowance twice: once on the purchase completing upstream and once on whatever it bought next.
   assert.equal(h.ctx.journal.get('key-2')?.state, 'intent', 'the intent stays: money may have moved');
+  assert.equal(h.ctx.budget.view().remaining, '5', 'and so does the hold, until something finds out what happened');
+  assert.equal(h.ctx.journal.get('key-2')?.budget_held, true);
 
   const retry = await h.call('buy', { quote_id: q.quote_id, confirm_total: '5', confirm: true, idempotency_key: 'key-2' });
   assert.equal((retry.data.error as Record<string, unknown>).code, 'idempotency_replay');
   assert.match(String((retry.data.error as Record<string, unknown>).message), /reconcile_purchase/);
+
+  // …and `reconcile_purchase` is the thing that finds out. Nothing was settled on the fake node, so the
+  // allowance comes back and the row stops holding it.
+  const rec = await h.call('reconcile_purchase', { idempotency_key: 'key-2' });
+  assert.equal(rec.data.state, 'never_paid');
+  assert.equal(h.ctx.budget.view().remaining, '10', 'the hold is released once the outcome is known');
+  assert.equal(h.ctx.journal.get('key-2')?.budget_held, false);
 });
 
 test('reconcile_purchase tells the four truths apart without paying anything', async (t) => {
