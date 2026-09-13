@@ -16,9 +16,67 @@ It is also an MCP **client**: `McpDataSource` connects to somebody else's MCP se
 the answer into the same `{prompt, answer}` rows the teach door eats, and records where every row came from. The
 worked example does that against The Graph's hosted Subgraph MCP — live, or not at all.
 
-The design this implements is `docs/mcp-integration-design.md`. The Graph-specific pipelines and the four-arm
-benchmark live in `graph/`, per `graph/README.md`; this package owns the seam between the two directions
-(`src/rows.ts`, `src/datasource.ts`).
+This standalone repository owns the reusable MCP client and canonical training-row seam
+(`src/rows.ts`, `src/datasource.ts`). Broader benchmarks live in the separate
+[ainize-bench repository](https://github.com/ainblockchain/ainize-bench).
+
+## ETHOnline2026: The Graph AI Continuity demo
+
+Turn live Uniswap v3 data from **The Graph hosted Subgraph MCP** into a reviewable Ainize training dataset.
+The automation discovers candidates, checks query volume, reads the schema, discovers a block, pins every query
+root to that block, rejects errors, and converts token identities into bounded, deduplicated question/answer rows.
+The generic `McpDataSource` and declarative mappings also work with other SSE, HTTP or stdio MCP providers.
+
+From a fresh standalone clone, with **Node.js 24+, npm and Git** (Python 3, make and a C++ compiler may be needed
+if a native dependency has no prebuilt binary for your platform):
+
+```bash
+bash scripts/demo-graph.sh
+```
+
+This installs locked dependencies, builds, reads the live provider, writes `evidence/latest/tokens.jsonl`, and
+verifies the evidence. No key is required for the public hosted endpoint; when `GRAPH_API_KEY` is set the script
+uses it for authentication. Credentials are not written into the artifacts. Expect a few minutes for installation
+and provider calls. Network failures fail the command; there is no mock or cached-data fallback.
+
+To run after installation, or reproduce a specific historical snapshot:
+
+```bash
+node dist/examples/subgraph-to-training-set.js --anonymous \
+  --subgraph 5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV --first 20 \
+  --block 25969003 --out evidence/replay/tokens.jsonl
+node scripts/validate-graph-evidence.mjs evidence/replay/tokens.jsonl
+```
+
+Omit `--anonymous` to use your environment's Graph key. Omit `--block` to discover the latest indexed block.
+Historical availability depends on the provider. The full dataset hash includes fetch-time provenance notes;
+a live replay may have different bytes while returning the same facts at the same block.
+
+Each run saves JSONL training rows, a `.provenance.json` sidecar (server identity, authentication boolean,
+exact query, deployment, block/hash, argument and row hashes), and a `.evidence.json` sidecar containing
+**all tool response content**, server instructions, discovery, volume check, schema, probe, mapping and rejections.
+The shell demo also captures its console transcript and validation result. The offline verifier reconstructs the
+exact rows from the raw response and checks hashes, pins and metadata. This demonstrates internal consistency;
+it is not a provider signature or an independent cryptographic proof of chain truth.
+
+The [recorded authenticated run](evidence/ethonline2026/README.md) contains 20 rows at block **25969047**,
+plus a real Ainize upload receipt: all 20 accepted, with the exact predicted content hash. To upload a verified
+dataset using a dedicated teaching key (no GPU training):
+
+```bash
+AINIZE_NODE_URL=https://www.ainize.ai node scripts/upload-graph-evidence.mjs evidence/latest/tokens.jsonl
+```
+
+Set `AINIZE_TEACH_KEY` privately before running it. The receipt is saved as `<dataset>.upload.json`.
+The public service reported a busy trainer during this run; dataset ingestion succeeded independently.
+
+The result is a training-ready dataset, **not a measured model improvement**. No GPU training, payment or
+publication occurs. An optional `--upload` uses `AINIZE_NODE_URL` and `AINIZE_TEACH_KEY` to create a training set;
+preflight and teaching are separate steps. Review token-name ambiguity and the sample's limits before training.
+The default mapping is restricted to the explicit Ethereum Uniswap v3 subgraph; other subgraphs need their own
+`--mapping-file`. Custom queries support a single literal query without fragments or variables, including
+`_meta { block { number hash } deployment hasIndexingErrors }`; the pipeline adds block pins to every root.
+
 
 ---
 
@@ -83,9 +141,9 @@ This is the part worth reading before anything else.
 
 ```bash
 export PATH="$HOME/.local/node/bin:$PATH"      # Node 24
-npm install                                     # the workspace picks packages/mcp up automatically
-npm run build -w packages/core -w packages/mcp
-node packages/mcp/dist/bin.js --help
+npm ci                                          # standalone checkout; Node 24+ and Git
+npm run build
+node dist/bin.js --help
 ```
 
 ## Configure a client
@@ -100,13 +158,13 @@ claude mcp add ainize \
   -e AINIZE_NODE_URL=http://localhost:3422 \
   -e AINIZE_TEACH_KEY="$AINIZE_TEACH_KEY" \
   -e AINIZE_MCP_SESSION_BUDGET=0 \
-  -- node /abs/path/knowledge-marketplace/packages/mcp/dist/bin.js
+  -- node /abs/path/ainize-mcp/dist/bin.js
 ```
 
 **Streamable HTTP (one process, several clients):**
 
 ```bash
-node packages/mcp/dist/bin.js --http 3499
+node dist/bin.js --http 3499
 claude mcp add --transport http ainize http://127.0.0.1:3499/mcp
 ```
 
@@ -122,7 +180,7 @@ same object shape — a commented, ready-to-paste version of both blocks is in
   "mcpServers": {
     "ainize": {
       "command": "node",
-      "args": ["/abs/path/knowledge-marketplace/packages/mcp/dist/bin.js"],
+      "args": ["/abs/path/ainize-mcp/dist/bin.js"],
       "env": { "AINIZE_NODE_URL": "http://localhost:3422", "AINIZE_MCP_SESSION_BUDGET": "0" }
     }
   }
@@ -186,7 +244,7 @@ print a credential, never background-poll a human decision.
 | [`EVAL.md`](EVAL.md) | eight plain-English prompts and their mechanical pass conditions — re-runnable by a judge |
 
 `scripts/validate-skill.mjs` checks the frontmatter, the token budget, that every `references/*.md` is linked and
-that every tool the body names is actually registered; `npm test -w packages/mcp` runs it, so the skill cannot drift
+that every tool the body names is actually registered; `npm test` runs it, so the skill cannot drift
 away from the server. Packaging metadata for `claude plugins add` is in
 [`.claude-plugin/`](.claude-plugin/plugin.json); publishing it as a marketplace additionally needs
 `.claude-plugin/marketplace.json` copied to the **repository root** of a public repo, which is why the file here
@@ -769,7 +827,7 @@ const { rows, provenance, rejected } = await source.fetchRows({
 credential was presented (never the credential), the tool, the exact arguments and their sha256, the block the answer
 was pinned to, a hash per row and the sha256 of the canonical JSONL. That last one is *the node's own hash*
 (`test/rows.test.ts` holds this implementation to `sha256Rows` in `packages/node/src/teach-dataset.ts`), so a caller
-knows the training-set id before uploading and identical rows land on the same training set instead of a second copy.
+knows the content hash before uploading. Ainize assigns a separate UUID dataset id and deduplicates identical rows.
 Because the node's dataset API has no provenance field yet, the compact line goes into each row's own `note` — which
 is what a buyer sees when the training set is published with notes — and the full record is written beside the
 journal when a state directory is configured.
@@ -781,7 +839,7 @@ be able to spend a day's lessons on on-chain data nobody has read.
 
 ```bash
 export GRAPH_API_KEY=…            # https://thegraph.com/studio/apikeys/
-node packages/mcp/dist/examples/subgraph-to-training-set.js \
+node dist/examples/subgraph-to-training-set.js \
   --keyword uniswap --subgraph 5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV --first 20 \
   --out /tmp/uniswap.jsonl --upload --name "Uniswap v3 token addresses"
 ```
@@ -796,23 +854,24 @@ Measured on this machine on 2026-09-04 and reported honestly by the example rath
   `--subgraph <id>` instead of guessing* — which is what the Subgraph MCP's instructions say to do when volumes
   cannot decide;
 - the schema is fetched and checked against the mapping before any field name is used;
-- rows are deliberately **immutable facts only** (an address, a symbol, a name). A price or a TVL changes every
-  block: that is retrieval, not memory, and training it produces a knowledge that is wrong tomorrow.
+- default rows teach **snapshot-scoped token identities** with the source, chain and block in each question.
+  Names and symbols can change or collide; these are indexed observations, not endorsements or globally unique names.
+  Fast-changing prices and TVL are deliberately excluded.
 
-**No key, no run.** `graph/README.md` requires live data, so a missing `GRAPH_API_KEY` is a clear failure with an
-instruction, never a silent fall back to fixtures. (`--anonymous` is offered because the hosted server does answer
-unauthenticated — the run is then attributable to nobody, which is not what a real integration ships.)
+**Live data required.** Use `--anonymous` for the public demo or set `GRAPH_API_KEY` for an authenticated run.
+An unreachable provider fails the command; there is no fixture fallback. `--anonymous` suppresses credentials even
+when a key is present in the environment.
 
 ---
 
 ## Tests
 
 ```bash
-npm test -w packages/mcp                      # unit + tool handlers against a fake node (fast, no cluster needed)
-AINIZE_SMOKE_NODE_URL=http://localhost:3422 npm test -w packages/mcp    # + a real-node smoke test
-AINIZE_MCP_SMOKE_LIVE=1 npm test -w packages/mcp                        # + one real before/after on the shared GPU
-GRAPH_API_KEY=… npm test -w packages/mcp                                # + the live Subgraph MCP smoke test
-npx tsc -p packages/mcp/tsconfig.json --noEmit
+npm test                      # unit + tool handlers against a fake node (fast, no cluster needed)
+AINIZE_SMOKE_NODE_URL=http://localhost:3422 npm test    # + a real-node smoke test
+AINIZE_MCP_SMOKE_LIVE=1 npm test                        # + one real before/after on the shared GPU
+GRAPH_API_KEY=… npm test                                # + the live Subgraph MCP smoke test
+npx tsc -p tsconfig.json --noEmit
 ```
 
 `test/fake-node.ts` answers with the real node's shapes and records every request, so the tests can assert what was
@@ -828,7 +887,7 @@ answer to a JSONL transcript under `packages/e2e/results/mcp/`. Every defect lis
 "a real MCP client found" was found this way and could not have been found by the fake.
 
 ```bash
-node packages/mcp/scripts/drive.mjs packages/mcp/scripts/scenarios/<scenario>.mjs
+node scripts/drive.mjs scripts/scenarios/<scenario>.mjs
 ```
 
 | Scenario | What it drives | Needs |
@@ -851,7 +910,7 @@ local-ledger cluster**, never at the demo cluster or the shared AIN chain.
 
 | Symptom | Cause | What to do |
 |---|---|---|
-| The client shows **0 tools** | the server started but the node did not answer | check `AINIZE_NODE_URL`; `curl $AINIZE_NODE_URL/api/info`. Read tools register even when the node is down, so 0 tools means the process itself failed — run `node packages/mcp/dist/bin.js --help` by hand and read stderr |
+| The client shows **0 tools** | the server started but the node did not answer | check `AINIZE_NODE_URL`; `curl $AINIZE_NODE_URL/api/info`. Read tools register even when the node is down, so 0 tools means the process itself failed — run `node dist/bin.js --help` by hand and read stderr |
 | The stdio handshake **hangs or garbles** | something printed to stdout before the transport connected | this server guards stdout before importing anything (`@ainize/core` prints `secp256k1 unavailable` on import). If you add an import that prints, that guard is why the handshake still works |
 | **`teach` is missing** | no teaching key, or the node runs no teach worker | set `AINIZE_TEACH_KEY`; `node_status` → `capability_reasons.can_teach` says which |
 | **`buy` is missing** | the session budget is `0` (the default), or no operator credential | set `AINIZE_MCP_SESSION_BUDGET` **and** `AINIZE_OPERATOR_PASSWORD` / `AINIZE_TOKEN`. Buying is operator-gated on the node itself |

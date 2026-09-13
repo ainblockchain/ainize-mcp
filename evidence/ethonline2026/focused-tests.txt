@@ -1,0 +1,65 @@
+TAP version 13
+# Subtest: connect: the handshake, the tool list, and what goes into provenance about the far side
+ok 1 - connect: the handshake, the tool list, and what goes into provenance about the far side
+  ---
+  duration_ms: 123.259069
+  ...
+# Subtest: fetchRows: rows in the canonical shape, provenance sealed over exactly those rows
+ok 2 - fetchRows: rows in the canonical shape, provenance sealed over exactly those rows
+  ---
+  duration_ms: 56.3616
+  ...
+# Subtest: an upstream tool error is an error here, never an empty training set
+ok 3 - an upstream tool error is an error here, never an empty training set
+  ---
+  duration_ms: 74.907949
+  ...
+# Subtest: an answer that is not JSON is refused rather than mapped into nothing
+ok 4 - an answer that is not JSON is refused rather than mapped into nothing
+  ---
+  duration_ms: 93.680629
+  ...
+# Subtest: a runaway answer is capped before it becomes the agent's context
+ok 5 - a runaway answer is capped before it becomes the agent's context
+  ---
+  duration_ms: 73.676605
+  ...
+# Subtest: calling before connecting, and connecting to nothing, both say so plainly
+ok 6 - calling before connecting, and connecting to nothing, both say so plainly
+  ---
+  duration_ms: 1.810824
+  ...
+# Subtest: the recorded live Graph evidence reconstructs all canonical rows
+ok 7 - the recorded live Graph evidence reconstructs all canonical rows
+  ---
+  duration_ms: 37.663322
+  ...
+# Subtest: evidence verifier rejects changed rows, provenance, pins and raw responses
+ok 8 - evidence verifier rejects changed rows, provenance, pins and raw responses
+  ---
+  duration_ms: 38.725356
+  ...
+# Subtest: pinning constrains metadata and every root entity, including aliases and existing pins
+ok 9 - pinning constrains metadata and every root entity, including aliases and existing pins
+  ---
+  duration_ms: 6.010328
+  ...
+# Subtest: pinning refuses unsupported queries and invalid blocks
+ok 10 - pinning refuses unsupported queries and invalid blocks
+  ---
+  duration_ms: 1.702599
+  ...
+# Subtest: Graph errors, indexing errors and block drift cannot become successful datasets
+ok 11 - Graph errors, indexing errors and block drift cannot become successful datasets
+  ---
+  duration_ms: 0.672896
+  ...
+1..11
+# tests 11
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2187.379728

@@ -1,0 +1,39 @@
+connected: subgraph-mcp 0.1.1 over sse (anonymous), protocol 2024-11-05
+tools: get_deployment_30day_query_counts, search_subgraphs_by_keyword, get_schema_by_subgraph_id, get_schema_by_ipfs_hash, execute_query_by_deployment_id, execute_query_by_ipfs_hash, get_schema_by_deployment_id, execute_query_by_subgraph_id, get_top_subgraph_deployments
+
+1. search_subgraphs_by_keyword("uniswap") → 22 candidate(s)
+2. get_deployment_30day_query_counts → 30-day volume, highest first:
+             0  uniswap-v2-base  QmQmz5kh1f83Re1Zaj9UYrzKmcWqpKf1tNs9K6M9WrvPC8
+             0  Uniswap-V3  QmTZ8ejXJxRo7vDBS4uwqBeGoxLSWbhaA7oXa1RvxunLy7
+             0  Uniswap V3 Base  QmVeyHjXivX8mY7bzWdbHDyA5z9ojgJdTu6uwFJsJvUzYR
+             0  uniswap-v3-bsc  QmWEfBuWNqtYwj6XcJyESVVeiN3UmcphMcVjySR1Qqm1yE
+             0  Substreams Uniswap v3 Ethereum  QmWFi6uciaQPQmo1xRrahNwfiWLGeN9GTDJMuCfV8iVXSe
+     every candidate reports 0 — the ranking signal this workflow depends on is unavailable right now.
+   using subgraph 5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV (named on the command line)
+
+3. get_schema_by_subgraph_id → 19034 bytes of SDL
+   schema check: tokens, id, symbol, name all present
+
+4. execute_query_by_subgraph_id → 20 item(s) → 20 row(s), 0 rejected, 3394 bytes
+
+   Q At block 25969047, which Ethereum mainnet address is indexed by Uniswap v3 for Wrapped Ether (WETH)?
+   A 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2
+     via MCP subgraph-mcp · execute_query_by_subgraph_id · subgraph_id 5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV · block 25969047 · args 160202fdf689 · 2026-09-13T14:21:24Z
+   Q At block 25969047, which Ethereum mainnet address is indexed by Uniswap v3 for USD Coin (USDC)?
+   A 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
+     via MCP subgraph-mcp · execute_query_by_subgraph_id · subgraph_id 5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV · block 25969047 · args 160202fdf689 · 2026-09-13T14:21:24Z
+   Q At block 25969047, which Ethereum mainnet address is indexed by Uniswap v3 for Tether USD (USDT)?
+   A 0xdac17f958d2ee523a2206206994597c13d831ec7
+     via MCP subgraph-mcp · execute_query_by_subgraph_id · subgraph_id 5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV · block 25969047 · args 160202fdf689 · 2026-09-13T14:21:24Z
+   Q At block 25969047, which Ethereum mainnet address is indexed by Uniswap v3 for Wrapped BTC (WBTC)?
+   A 0x2260fac5e5542a773aa44fbcfedf7c193bc2c599
+     via MCP subgraph-mcp · execute_query_by_subgraph_id · subgraph_id 5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV · block 25969047 · args 160202fdf689 · 2026-09-13T14:21:24Z
+   Q At block 25969047, which Ethereum mainnet address is indexed by Uniswap v3 for Dai Stablecoin (DAI)?
+   A 0x6b175474e89094c44da98b954eedeac495271d0f
+     via MCP subgraph-mcp · execute_query_by_subgraph_id · subgraph_id 5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV · block 25969047 · args 160202fdf689 · 2026-09-13T14:21:24Z
+   … 15 more
+
+rows_sha256 0861a41f9b0f1066e9b6deaf06a665bf6c2ada23fba22c0fbafff61c99f00805   (expected dataset content hash; Ainize assigns a separate dataset id)
+wrote evidence/latest/tokens.jsonl, evidence/latest/tokens.jsonl.provenance.json and evidence/latest/tokens.jsonl.evidence.json
+
+nothing was uploaded and nothing was trained. Add --upload to put these rows on an Ainize node as a training set.

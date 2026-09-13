@@ -165,9 +165,10 @@ export class McpDataSource {
         const res = await c.callTool({ name: tool, arguments: args }, undefined, { timeout: this.timeoutMs });
         const content = (res.content ?? []) as { type?: string; text?: string }[];
         const text = content.map((b) => (typeof b.text === 'string' ? b.text : '')).join('');
-        if (text.length > this.maxResultBytes) {
+        const bytes = Buffer.byteLength(text, 'utf8');
+        if (bytes > this.maxResultBytes) {
           throw new McpDataSourceError(
-            `${tool} returned ${text.length} bytes, over the ${this.maxResultBytes}-byte cap — page the query (first: N / skip) instead of asking for everything`,
+            `${tool} returned ${bytes} bytes, over the ${this.maxResultBytes}-byte cap — page the query (first: N / skip) instead of asking for everything`,
             'mcp_result_too_large',
           );
         }
@@ -210,7 +211,7 @@ export class McpDataSource {
     stamp_notes?: boolean;
     /** Which `upstream` keys belong in that one-line note. Default: all of them. */
     note_fields?: string[];
-  }): Promise<MappedRows & { provenance: RowProvenance; raw_bytes: number }> {
+  }): Promise<MappedRows & { provenance: RowProvenance; raw_bytes: number; raw: McpCallResult }> {
     const out = await this.call(spec.tool, spec.arguments ?? {});
     if (out.isError) {
       throw new McpDataSourceError(`${spec.tool} answered with an error: ${out.text.slice(0, 400)}`, 'mcp_tool_error');
@@ -224,7 +225,7 @@ export class McpDataSource {
     const mapped = mapRows(out.json, spec.mapping);
     const head = { ...out.provenance, ...(spec.upstream ? { upstream: spec.upstream } : {}) };
     const rows = spec.stamp_notes === false ? mapped.rows : withProvenanceNotes(mapped.rows, head, spec.note_fields);
-    return { ...mapped, rows, provenance: sealProvenance(rows, head), raw_bytes: out.text.length };
+    return { ...mapped, rows, provenance: sealProvenance(rows, head), raw_bytes: Buffer.byteLength(out.text, 'utf8'), raw: out };
   }
 
   async close(): Promise<void> {

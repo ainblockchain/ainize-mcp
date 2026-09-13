@@ -1,0 +1,10 @@
+✔ smoke: the hosted Subgraph MCP answers over SSE and states its own mandatory workflow (3813.331969ms)
+✔ smoke: a live subgraph query becomes block-pinned training rows (4513.409821ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9860.846273

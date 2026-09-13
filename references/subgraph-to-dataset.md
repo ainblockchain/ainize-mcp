@@ -1,8 +1,8 @@
 # Direction B — another MCP server's data becomes a training set
 
-`graph/README.md` assigns the split: `packages/mcp` owns the generic MCP **client** plumbing and the seam
-(`{prompt, answer, note?}` rows plus provenance); `graph/` owns The Graph-specific pipelines and the four-arm
-benchmark. This file is the seam, end to end.
+This standalone repository owns the generic MCP **client** plumbing and the seam
+(`{prompt, answer, note?}` rows plus provenance). See the [public demo](../README.md#ethonline2026-the-graph-ai-continuity-demo)
+for a single-command live run. Broader benchmarks are maintained separately in ainize-bench.
 
 ## The seam
 
@@ -42,7 +42,7 @@ reason (a missing required field, an over-long prompt, a duplicate).
 `RowProvenance` records: the server name and identity, the negotiated protocol version, **whether** a credential was
 presented (never the credential), the tool, the exact arguments and their sha256, the pinning facts (subgraph id,
 IPFS hash, block), a hash per row, and the sha256 of the canonical JSONL — which is the node's own dataset hash, so
-the training-set id is known before uploading.
+the content hash is known before uploading. Ainize returns a separate UUID dataset id.
 
 The node's dataset API has no provenance field yet, so the compact line rides in each row's own `note` (selectable
 with `note_fields`, capped at the node's 500 characters):
@@ -69,7 +69,8 @@ Measured on this machine on 2026-09-04, and reported by the example rather than 
 
 ## The volatility rule
 
-Train **immutable** facts only: a contract address, a symbol, a decimals value, a deployment block. A price, a TVL
+Prefer **snapshot-scoped identity facts**: a contract address and its indexed token metadata at a stated block.
+Names and symbols are not unique and can change; the default questions explicitly include the source and block. A price, a TVL
 or a holder count changes every block — that is retrieval, not memory, and training it produces a knowledge that is
 wrong tomorrow and unverifiable the day after (a verifier re-running the benchmark would score it against a
 different chain state).
@@ -83,7 +84,7 @@ day's lessons on on-chain data nobody has read: show the rows and the count, and
 
 ```bash
 export GRAPH_API_KEY=…            # https://thegraph.com/studio/apikeys/
-node packages/mcp/dist/examples/subgraph-to-training-set.js \
+node dist/examples/subgraph-to-training-set.js \
   --keyword uniswap --subgraph 5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV --first 20 \
   --out /tmp/uniswap.jsonl --upload --name "Uniswap v3 token addresses"
 ```
@@ -91,6 +92,5 @@ node packages/mcp/dist/examples/subgraph-to-training-set.js \
 `--upload` puts the rows on the configured Ainize node as a training set and then **stops**, printing the separate
 `teach_preflight` / `teach` calls a human must approve.
 
-**No key, no run.** `graph/README.md` requires live data, so a missing `GRAPH_API_KEY` is a clear failure with an
-instruction, never a silent fall back to fixtures. (`--anonymous` exists because the hosted server does answer
-unauthenticated — the run is then attributable to nobody, which is not what a real integration ships.)
+**Live data required.** The public demo uses `--anonymous` when no key is set. Set `GRAPH_API_KEY` for an
+authenticated run. Provider failures exit nonzero; recorded evidence is never substituted for a live response.

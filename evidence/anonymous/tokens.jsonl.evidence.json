@@ -1,0 +1,882 @@
+{
+  "format": "ainize-graph-evidence-v1",
+  "server": {
+    "name": "subgraph-mcp",
+    "url": "https://subgraphs.mcp.thegraph.com/sse",
+    "transport": "sse",
+    "protocol_version": "2024-11-05",
+    "authenticated": false,
+    "server_name": "subgraph-mcp",
+    "server_version": "0.1.1"
+  },
+  "tools": [
+    {
+      "name": "get_deployment_30day_query_counts",
+      "description": "Get the aggregate query count over the last 30 days for multiple subgraph deployments, sorted by query count in descending order.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ipfs_hashes": {
+            "description": "List of IPFS hashes (Qm...) to get query counts for the last 30 days",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "ipfs_hashes"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "GetDeployment30DayQueryCountsRequest"
+      }
+    },
+    {
+      "name": "search_subgraphs_by_keyword",
+      "description": "Search for subgraphs by keyword in their display names, ordered by signal. Returns top 10 results if total results ≤ 100, or square root of total otherwise.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "description": "Keyword to search for in subgraph names",
+            "type": "string"
+          }
+        },
+        "required": [
+          "keyword"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "SearchSubgraphsByKeywordRequest"
+      }
+    },
+    {
+      "name": "get_schema_by_subgraph_id",
+      "description": "Get the schema for the current version of a subgraph using its subgraph ID (e.g., 5zvR82...).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subgraph_id": {
+            "description": "The subgraph ID (e.g., 5zvR82...) to get the current schema for",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subgraph_id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "GetSchemaBySubgraphIdRequest"
+      }
+    },
+    {
+      "name": "get_schema_by_ipfs_hash",
+      "description": "Get schema for a specific subgraph deployment using its IPFS hash (Qm...).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ipfs_hash": {
+            "description": "The IPFS hash (e.g., Qm...) of the specific deployment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ipfs_hash"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "GetSchemaByIpfsHashRequest"
+      }
+    },
+    {
+      "name": "execute_query_by_deployment_id",
+      "description": "Execute a GraphQL query against a specific deployment ID.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "deployment_id": {
+            "description": "The deployment ID (e.g., 0x...) of the specific subgraph deployment",
+            "type": "string"
+          },
+          "query": {
+            "description": "The GraphQL query string",
+            "type": "string"
+          },
+          "variables": {
+            "description": "Optional JSON value for GraphQL variables",
+            "nullable": true
+          }
+        },
+        "required": [
+          "deployment_id",
+          "query"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "ExecuteQueryByDeploymentIdRequest"
+      }
+    },
+    {
+      "name": "execute_query_by_ipfs_hash",
+      "description": "Execute a GraphQL query against a specific IPFS hash.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ipfs_hash": {
+            "description": "The IPFS hash (e.g., Qm...) of the specific deployment",
+            "type": "string"
+          },
+          "query": {
+            "description": "The GraphQL query string",
+            "type": "string"
+          },
+          "variables": {
+            "description": "Optional JSON value for GraphQL variables",
+            "nullable": true
+          }
+        },
+        "required": [
+          "ipfs_hash",
+          "query"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "ExecuteQueryByIpfsHashRequest"
+      }
+    },
+    {
+      "name": "get_schema_by_deployment_id",
+      "description": "Get schema for a specific subgraph deployment using its deployment ID (0x...).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "deployment_id": {
+            "description": "The deployment ID (e.g., 0x...) of the specific deployment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deployment_id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "GetSchemaByDeploymentIdRequest"
+      }
+    },
+    {
+      "name": "execute_query_by_subgraph_id",
+      "description": "Execute a GraphQL query against the latest deployment of a subgraph ID.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "description": "The GraphQL query string",
+            "type": "string"
+          },
+          "subgraph_id": {
+            "description": "The ID of the subgraph (resolves to the latest deployment)",
+            "type": "string"
+          },
+          "variables": {
+            "description": "Optional JSON value for GraphQL variables",
+            "nullable": true
+          }
+        },
+        "required": [
+          "query",
+          "subgraph_id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "ExecuteQueryBySubgraphIdRequest"
+      }
+    },
+    {
+      "name": "get_top_subgraph_deployments",
+      "description": "Get the top 3 subgraph deployments for a given contract address and chain, ordered by query fees. For chain, use 'mainnet' for Ethereum mainnet, NEVER use 'ethereum'.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "chain": {
+            "description": "The chain name (e.g., 'mainnet', 'arbitrum-one')",
+            "type": "string"
+          },
+          "contract_address": {
+            "description": "The contract address to find subgraph deployments for",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "contract_address"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "GetTopSubgraphDeploymentsRequest"
+      }
+    }
+  ],
+  "instructions": "**Interacting with The Graph Subgraphs**\n**IMPORTANT: ALWAYS verify query volumes using `get_deployment_30day_query_counts` for any potential subgraph candidate *before* selecting or querying it. This step is NON-OPTIONAL. Failure to do so may result in using outdated or irrelevant data.**\n**Follow this sequence strictly:**\n1.  **Analyze User Request:**\n    *   Identify the **protocol name** (e.g., \"Uniswap\", \"Aave\", \"ENS\").\n    *   Note any specific **version** or **blockchain network** mentioned by the user.\n    *   Determine the **goal**: Query data? Get schema?\n2.  **Initial Search & Preliminary Analysis:**\n    *   Use `search_subgraphs_by_keyword` with the most generic term for the protocol (e.g., if \"Uniswap v3 on Ethereum\", initially search only for \"Uniswap\").\n    *   Examine `displayName` and other metadata in the search results for version and network information.\n3.  **Mandatory Query Volume Check & Clarification (If Needed):**\n    *   **ALWAYS** extract the IPFS hashes (`ipfsHash`) for all potentially relevant subgraphs identified in Step 2.\n    *   **ALWAYS** use `get_deployment_30day_query_counts` for these IPFS hashes.\n    *   **If Ambiguous (Multiple Versions/Chains with significant volume):**\n        *   Present a summary to the user, **including the 30-day query counts for each option**. For example: \"I found several Uniswap subgraphs. Uniswap v3 on Ethereum is the most active (X queries last 30 days). I also see Uniswap v2 on Ethereum (Y queries) and Uniswap v3 on Arbitrum (Z queries). Which specific version and network are you interested in?\"\n    *   **If Still Unclear (Information Missing and Not Inferable even with query volumes):**\n        *   If version/chain information is genuinely missing from search results and user input, and query volumes don't offer a clear path (e.g. all relevant subgraphs have very low or no volume), ask for clarification directly. Example: \"I found several subgraphs for 'ExampleProtocol', but none have significant query activity. Could you please specify the version and blockchain network you're interested in?\"\n    *   **Do NOT proceed to Step 4 without completing this query volume verification.**\n4.  **Select Final Subgraph (Post Query Volume Check & Clarification):**\n    *   After the keyword search, mandatory query volume check, and any necessary clarification, you should have a clear target protocol, version, and network.\n    *   Identify all candidate subgraphs from your Step 2 `search_subgraphs_by_keyword` results that match these clarified criteria.\n    *   **If there is more than one such matching subgraph:**\n        *   You should have already fetched their query counts in Step 3.\n        *   **Select the subgraph with the highest `total_query_count`** among them.\n    *   **If only one subgraph precisely matches the criteria**, that is your selected subgraph.\n    *   When presenting your chosen subgraph or asking for final confirmation before querying, **ALWAYS state its 30-day query volume** to demonstrate this check has been performed. For example: \"I've selected the 'Uniswap v3 Ethereum' subgraph, which has X queries in the last 30 days. Shall I proceed to get its schema?\"\n    *   If the selected subgraph's query count is very low (and this wasn't already discussed during clarification), briefly inform the user.\n5.  **Execute Action Using the Identified Subgraph:**\n    *   **Identify the ID Type:** (Subgraph ID, Deployment ID, or IPFS Hash - note that `search_subgraphs_by_keyword` returns `id` for Subgraph ID and `ipfsHash` for current deployment's IPFS hash).\n    *   **Determine the Correct Tool based on Goal & ID Type:**\n        *   **Goal: Query Data**\n            *   Subgraph ID (`id` from search) → `execute_query_by_subgraph_id`\n            *   Deployment ID (0x...) → `execute_query_by_deployment_id`\n            *   IPFS Hash (`ipfsHash` from search) → `execute_query_by_ipfs_hash`\n        *   **Goal: Get Schema**\n            *   Subgraph ID → `get_schema_by_subgraph_id`\n            *   Deployment ID → `get_schema_by_deployment_id`\n            *   IPFS Hash → `get_schema_by_ipfs_hash`\n    *   **Write Clean GraphQL Queries:** Simple structure, omit 'variables' if unused, include only essential fields.\n**Special Case: Contract Address Lookup**\n*   ONLY when a user explicitly provides a **contract address** (0x...) AND asks for subgraphs related to it:\n    *   Identify the blockchain network for the address (ask user if unclear).\n    *   Use `get_top_subgraph_deployments` with the provided contract address and chain name.\n    *   Process and use the resulting IPFS hashes as needed. **Crucially, before using any of these IPFS hashes for querying, first use `get_deployment_30day_query_counts` with their IPFS hashes to verify recent activity.**\n**ID Type Reference:**\n*   **Subgraph ID**: Typically starts with digits and letters (e.g., 5zvR82...)\n*   **Contract Address**: A shorter hexadecimal string, typically 42 characters long including the \"0x\" prefix (e.g., 0x1a3c9b1d2f0529d97f2afc5136cc23e58f1fd35b).\n*   **Deployment ID**: A longer hexadecimal string, typically 66 characters long including the \"0x\" prefix (e.g., 0xc5b4d246cf890b0b468e005224622d4c85a8b723cc0b8fa7db6d1a93ddd2e5de). Use length to distinguish from a Contract Address.\n*   **IPFS Hash**: Typically starts with Qm... For the purpose of `get_deployment_30day_query_counts`, use the 'IPFS Hash' (Qm...).\n*   Note `search_subgraphs_by_keyword` and `get_top_subgraph_deployments` returns `ipfsHash`.\n\n**Best Practices:**\n*   When using GraphQL, if unsure about the structure, first get the schema to understand available entities and fields.\n*   Create focused queries that only request necessary fields.\n*   For paginated data, use appropriate limit parameters.\n*   Use variables for dynamic values in queries.",
+  "selection": {
+    "keyword": "uniswap",
+    "subgraph_id": "5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV",
+    "reason": "explicit CLI selection"
+  },
+  "calls": {
+    "search": {
+      "text": "{\n  \"returned\": 22,\n  \"subgraphs\": [\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"Qmbsc6XQWbiv4DfLVfaNciScqYLyDWUYjWzrFBbzzmRsMB\"\n        }\n      },\n      \"id\": \"Gqm2b5J85n1bhCyDMpGbtbVn4935EvvdyHdHrx3dibyj\",\n      \"metadata\": {\n        \"displayName\": \"uniswap-v4-base-3\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"Qmbsc6XQWbiv4DfLVfaNciScqYLyDWUYjWzrFBbzzmRsMB\"\n        }\n      },\n      \"id\": \"EGtoDJNnxouSwrBvf4HJMSWPCwbbo3XbTk4eA3LDeDUh\",\n      \"metadata\": {\n        \"displayName\": \"uniswap-v4-base-3\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmTZ8ejXJxRo7vDBS4uwqBeGoxLSWbhaA7oXa1RvxunLy7\"\n        }\n      },\n      \"id\": \"5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap-V3\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmZk7ThfQVkwhwckCPtqXmxC8SRD99gLeF9pxfYfEiVwV1\"\n        }\n      },\n      \"id\": \"GmSczqdCDZ3hJeYY9JphwsADn5rePUzUKm8EZcVuhRAm\",\n      \"metadata\": {\n        \"displayName\": \"uniswap-v2-ethereum\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmWFi6uciaQPQmo1xRrahNwfiWLGeN9GTDJMuCfV8iVXSe\"\n        }\n      },\n      \"id\": \"HUZDsRpEVP2AvzDCyzDHtdc64dyDxx8FQjzsmqSg4H3B\",\n      \"metadata\": {\n        \"displayName\": \"Substreams Uniswap v3 Ethereum\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmbTaWMFk4baXnoKQodnyYsFVKFNEiLsgZAe6eu2Sdj8Ef\"\n        }\n      },\n      \"id\": \"Cghf4LfVqPiFw6fp6Y5X5Ubc8UpmUhSfJL82zwiBFLaj\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Optimism\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmdAaDAUDCypVB85eFUkQMkS5DE1HV4s7WJb6iSiygNvAw\"\n        }\n      },\n      \"id\": \"EsLGwxyeMMeJuhqWvuLmJEiDKXJ4Z6YsoJreUnyeozco\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Polygon\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmdAaDAUDCypVB85eFUkQMkS5DE1HV4s7WJb6iSiygNvAw\"\n        }\n      },\n      \"id\": \"3hCPRGf4z88VC5rsBKU5AA9FBBq5nF3jbKJG7VZCbhjm\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Polygon\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmXMJ2Hnhhoz6bGFNtTBjnf7kAk9CNCQG7r4R5b7fyVjD7\"\n        }\n      },\n      \"id\": \"FQ6JYszEKApsBpAmiHesRsd9Ygc6mzmpNRANeVQFYoVX\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Arbitrum\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmbQBjZ1VUK42k1V6sn6PnP3BZ1vLZhUmzfDpyF9Eiwfgt\"\n        }\n      },\n      \"id\": \"EAq1nJKgjnuKH6Gj4RFjCW7LcL7E2uipbncdwV7TTWkX\",\n      \"metadata\": {\n        \"displayName\": \"uniswap-v4-bnb\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmZ5uwhnwsJXAQGYEF8qKPQ85iVhYAcVZcZAPfrF7ZNb9z\"\n        }\n      },\n      \"id\": \"FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Arbitrum\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmQmz5kh1f83Re1Zaj9UYrzKmcWqpKf1tNs9K6M9WrvPC8\"\n        }\n      },\n      \"id\": \"DbcUmZwXBYbNZvLuDEvcmFa4uAWwwjrdX8dVFg1AUVKa\",\n      \"metadata\": {\n        \"displayName\": \"uniswap-v2-base\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmQmz5kh1f83Re1Zaj9UYrzKmcWqpKf1tNs9K6M9WrvPC8\"\n        }\n      },\n      \"id\": \"7e2mrDKuzmoSpS9WPHZycL3Ab52RNjdMrPLRduXM9TGi\",\n      \"metadata\": {\n        \"displayName\": \"uniswap-v2-base\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmVeyHjXivX8mY7bzWdbHDyA5z9ojgJdTu6uwFJsJvUzYR\"\n        }\n      },\n      \"id\": \"GqzP4Xaehti8KSfQmv3ZctFSjnSUYZ4En5NRsiTbvZpz\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Base\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmZzsQGDmQFbzYkv2qx4pVnD6aVnuhKbD3t1ea7SAvV7zE\"\n        }\n      },\n      \"id\": \"FEtpnfQ1aqF8um2YktEkfzFD11ZKrfurvBLPeQzv9JB1\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V2 Dev\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmZzsQGDmQFbzYkv2qx4pVnD6aVnuhKbD3t1ea7SAvV7zE\"\n        }\n      },\n      \"id\": \"EYCKATKGBKLWvSfwvBjzfCBmGwYNdVkduYXVivCsLRFu\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V2\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmZzsQGDmQFbzYkv2qx4pVnD6aVnuhKbD3t1ea7SAvV7zE\"\n        }\n      },\n      \"id\": \"A3Np3RQbaBA6oKJgiwDJeo5T3zrYfGHPWFYayMwtNDum\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V2\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmWEfBuWNqtYwj6XcJyESVVeiN3UmcphMcVjySR1Qqm1yE\"\n        }\n      },\n      \"id\": \"7XgdLW3bts4HktCYsu9dy8bEnuiNeZuftcuK3Aj4JXYV\",\n      \"metadata\": {\n        \"displayName\": \"uniswap-v3-bsc\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmdAoDVjfSByKvTW1HrCDK1eJJKRRZxdj8bcqVqQLCofN4\"\n        }\n      },\n      \"id\": \"EgnS9YE1avupkvCNj9fHnJxppfEmNNywYJtghqiu2pd9\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Optimism\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"Qmcdu8weFbmtZpeZaGs8vCpSdWKRPwyvDMX6CftYnW2KZB\"\n        }\n      },\n      \"id\": \"HyW7A86UEdYVt5b9Lrw8W2F98yKecerHKutZTRbSCX27\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Arbitrum\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"Qmcdu8weFbmtZpeZaGs8vCpSdWKRPwyvDMX6CftYnW2KZB\"\n        }\n      },\n      \"id\": \"3V7ZY6muhxaQL5qvntX1CFXJ32W7BxXZTGTwmpH5J4t3\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Arbitrum\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmWqwrVtcTzZzbTLGLgiRSQzbZ7MTH53VwqK4AxXVmf7n3\"\n        }\n      },\n      \"id\": \"4A3fq2YYzT5poS9TW4ky9YjPnsBdh1pHGCRKD1UQBvhJ\",\n      \"metadata\": {\n        \"displayName\": \"uniswap-v3-matic\"\n      }\n    }\n  ],\n  \"total\": 478\n}",
+      "json": {
+        "returned": 22,
+        "subgraphs": [
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "Qmbsc6XQWbiv4DfLVfaNciScqYLyDWUYjWzrFBbzzmRsMB"
+              }
+            },
+            "id": "Gqm2b5J85n1bhCyDMpGbtbVn4935EvvdyHdHrx3dibyj",
+            "metadata": {
+              "displayName": "uniswap-v4-base-3"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "Qmbsc6XQWbiv4DfLVfaNciScqYLyDWUYjWzrFBbzzmRsMB"
+              }
+            },
+            "id": "EGtoDJNnxouSwrBvf4HJMSWPCwbbo3XbTk4eA3LDeDUh",
+            "metadata": {
+              "displayName": "uniswap-v4-base-3"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmTZ8ejXJxRo7vDBS4uwqBeGoxLSWbhaA7oXa1RvxunLy7"
+              }
+            },
+            "id": "5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV",
+            "metadata": {
+              "displayName": "Uniswap-V3"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmZk7ThfQVkwhwckCPtqXmxC8SRD99gLeF9pxfYfEiVwV1"
+              }
+            },
+            "id": "GmSczqdCDZ3hJeYY9JphwsADn5rePUzUKm8EZcVuhRAm",
+            "metadata": {
+              "displayName": "uniswap-v2-ethereum"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmWFi6uciaQPQmo1xRrahNwfiWLGeN9GTDJMuCfV8iVXSe"
+              }
+            },
+            "id": "HUZDsRpEVP2AvzDCyzDHtdc64dyDxx8FQjzsmqSg4H3B",
+            "metadata": {
+              "displayName": "Substreams Uniswap v3 Ethereum"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmbTaWMFk4baXnoKQodnyYsFVKFNEiLsgZAe6eu2Sdj8Ef"
+              }
+            },
+            "id": "Cghf4LfVqPiFw6fp6Y5X5Ubc8UpmUhSfJL82zwiBFLaj",
+            "metadata": {
+              "displayName": "Uniswap V3 Optimism"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmdAaDAUDCypVB85eFUkQMkS5DE1HV4s7WJb6iSiygNvAw"
+              }
+            },
+            "id": "EsLGwxyeMMeJuhqWvuLmJEiDKXJ4Z6YsoJreUnyeozco",
+            "metadata": {
+              "displayName": "Uniswap V3 Polygon"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmdAaDAUDCypVB85eFUkQMkS5DE1HV4s7WJb6iSiygNvAw"
+              }
+            },
+            "id": "3hCPRGf4z88VC5rsBKU5AA9FBBq5nF3jbKJG7VZCbhjm",
+            "metadata": {
+              "displayName": "Uniswap V3 Polygon"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmXMJ2Hnhhoz6bGFNtTBjnf7kAk9CNCQG7r4R5b7fyVjD7"
+              }
+            },
+            "id": "FQ6JYszEKApsBpAmiHesRsd9Ygc6mzmpNRANeVQFYoVX",
+            "metadata": {
+              "displayName": "Uniswap V3 Arbitrum"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmbQBjZ1VUK42k1V6sn6PnP3BZ1vLZhUmzfDpyF9Eiwfgt"
+              }
+            },
+            "id": "EAq1nJKgjnuKH6Gj4RFjCW7LcL7E2uipbncdwV7TTWkX",
+            "metadata": {
+              "displayName": "uniswap-v4-bnb"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmZ5uwhnwsJXAQGYEF8qKPQ85iVhYAcVZcZAPfrF7ZNb9z"
+              }
+            },
+            "id": "FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM",
+            "metadata": {
+              "displayName": "Uniswap V3 Arbitrum"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmQmz5kh1f83Re1Zaj9UYrzKmcWqpKf1tNs9K6M9WrvPC8"
+              }
+            },
+            "id": "DbcUmZwXBYbNZvLuDEvcmFa4uAWwwjrdX8dVFg1AUVKa",
+            "metadata": {
+              "displayName": "uniswap-v2-base"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmQmz5kh1f83Re1Zaj9UYrzKmcWqpKf1tNs9K6M9WrvPC8"
+              }
+            },
+            "id": "7e2mrDKuzmoSpS9WPHZycL3Ab52RNjdMrPLRduXM9TGi",
+            "metadata": {
+              "displayName": "uniswap-v2-base"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmVeyHjXivX8mY7bzWdbHDyA5z9ojgJdTu6uwFJsJvUzYR"
+              }
+            },
+            "id": "GqzP4Xaehti8KSfQmv3ZctFSjnSUYZ4En5NRsiTbvZpz",
+            "metadata": {
+              "displayName": "Uniswap V3 Base"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmZzsQGDmQFbzYkv2qx4pVnD6aVnuhKbD3t1ea7SAvV7zE"
+              }
+            },
+            "id": "FEtpnfQ1aqF8um2YktEkfzFD11ZKrfurvBLPeQzv9JB1",
+            "metadata": {
+              "displayName": "Uniswap V2 Dev"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmZzsQGDmQFbzYkv2qx4pVnD6aVnuhKbD3t1ea7SAvV7zE"
+              }
+            },
+            "id": "EYCKATKGBKLWvSfwvBjzfCBmGwYNdVkduYXVivCsLRFu",
+            "metadata": {
+              "displayName": "Uniswap V2"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmZzsQGDmQFbzYkv2qx4pVnD6aVnuhKbD3t1ea7SAvV7zE"
+              }
+            },
+            "id": "A3Np3RQbaBA6oKJgiwDJeo5T3zrYfGHPWFYayMwtNDum",
+            "metadata": {
+              "displayName": "Uniswap V2"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmWEfBuWNqtYwj6XcJyESVVeiN3UmcphMcVjySR1Qqm1yE"
+              }
+            },
+            "id": "7XgdLW3bts4HktCYsu9dy8bEnuiNeZuftcuK3Aj4JXYV",
+            "metadata": {
+              "displayName": "uniswap-v3-bsc"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmdAoDVjfSByKvTW1HrCDK1eJJKRRZxdj8bcqVqQLCofN4"
+              }
+            },
+            "id": "EgnS9YE1avupkvCNj9fHnJxppfEmNNywYJtghqiu2pd9",
+            "metadata": {
+              "displayName": "Uniswap V3 Optimism"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "Qmcdu8weFbmtZpeZaGs8vCpSdWKRPwyvDMX6CftYnW2KZB"
+              }
+            },
+            "id": "HyW7A86UEdYVt5b9Lrw8W2F98yKecerHKutZTRbSCX27",
+            "metadata": {
+              "displayName": "Uniswap V3 Arbitrum"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "Qmcdu8weFbmtZpeZaGs8vCpSdWKRPwyvDMX6CftYnW2KZB"
+              }
+            },
+            "id": "3V7ZY6muhxaQL5qvntX1CFXJ32W7BxXZTGTwmpH5J4t3",
+            "metadata": {
+              "displayName": "Uniswap V3 Arbitrum"
+            }
+          },
+          {
+            "currentVersion": {
+              "subgraphDeployment": {
+                "ipfsHash": "QmWqwrVtcTzZzbTLGLgiRSQzbZ7MTH53VwqK4AxXVmf7n3"
+              }
+            },
+            "id": "4A3fq2YYzT5poS9TW4ky9YjPnsBdh1pHGCRKD1UQBvhJ",
+            "metadata": {
+              "displayName": "uniswap-v3-matic"
+            }
+          }
+        ],
+        "total": 478
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"returned\": 22,\n  \"subgraphs\": [\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"Qmbsc6XQWbiv4DfLVfaNciScqYLyDWUYjWzrFBbzzmRsMB\"\n        }\n      },\n      \"id\": \"Gqm2b5J85n1bhCyDMpGbtbVn4935EvvdyHdHrx3dibyj\",\n      \"metadata\": {\n        \"displayName\": \"uniswap-v4-base-3\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"Qmbsc6XQWbiv4DfLVfaNciScqYLyDWUYjWzrFBbzzmRsMB\"\n        }\n      },\n      \"id\": \"EGtoDJNnxouSwrBvf4HJMSWPCwbbo3XbTk4eA3LDeDUh\",\n      \"metadata\": {\n        \"displayName\": \"uniswap-v4-base-3\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmTZ8ejXJxRo7vDBS4uwqBeGoxLSWbhaA7oXa1RvxunLy7\"\n        }\n      },\n      \"id\": \"5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap-V3\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmZk7ThfQVkwhwckCPtqXmxC8SRD99gLeF9pxfYfEiVwV1\"\n        }\n      },\n      \"id\": \"GmSczqdCDZ3hJeYY9JphwsADn5rePUzUKm8EZcVuhRAm\",\n      \"metadata\": {\n        \"displayName\": \"uniswap-v2-ethereum\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmWFi6uciaQPQmo1xRrahNwfiWLGeN9GTDJMuCfV8iVXSe\"\n        }\n      },\n      \"id\": \"HUZDsRpEVP2AvzDCyzDHtdc64dyDxx8FQjzsmqSg4H3B\",\n      \"metadata\": {\n        \"displayName\": \"Substreams Uniswap v3 Ethereum\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmbTaWMFk4baXnoKQodnyYsFVKFNEiLsgZAe6eu2Sdj8Ef\"\n        }\n      },\n      \"id\": \"Cghf4LfVqPiFw6fp6Y5X5Ubc8UpmUhSfJL82zwiBFLaj\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Optimism\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmdAaDAUDCypVB85eFUkQMkS5DE1HV4s7WJb6iSiygNvAw\"\n        }\n      },\n      \"id\": \"EsLGwxyeMMeJuhqWvuLmJEiDKXJ4Z6YsoJreUnyeozco\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Polygon\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmdAaDAUDCypVB85eFUkQMkS5DE1HV4s7WJb6iSiygNvAw\"\n        }\n      },\n      \"id\": \"3hCPRGf4z88VC5rsBKU5AA9FBBq5nF3jbKJG7VZCbhjm\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Polygon\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmXMJ2Hnhhoz6bGFNtTBjnf7kAk9CNCQG7r4R5b7fyVjD7\"\n        }\n      },\n      \"id\": \"FQ6JYszEKApsBpAmiHesRsd9Ygc6mzmpNRANeVQFYoVX\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Arbitrum\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmbQBjZ1VUK42k1V6sn6PnP3BZ1vLZhUmzfDpyF9Eiwfgt\"\n        }\n      },\n      \"id\": \"EAq1nJKgjnuKH6Gj4RFjCW7LcL7E2uipbncdwV7TTWkX\",\n      \"metadata\": {\n        \"displayName\": \"uniswap-v4-bnb\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmZ5uwhnwsJXAQGYEF8qKPQ85iVhYAcVZcZAPfrF7ZNb9z\"\n        }\n      },\n      \"id\": \"FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Arbitrum\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmQmz5kh1f83Re1Zaj9UYrzKmcWqpKf1tNs9K6M9WrvPC8\"\n        }\n      },\n      \"id\": \"DbcUmZwXBYbNZvLuDEvcmFa4uAWwwjrdX8dVFg1AUVKa\",\n      \"metadata\": {\n        \"displayName\": \"uniswap-v2-base\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmQmz5kh1f83Re1Zaj9UYrzKmcWqpKf1tNs9K6M9WrvPC8\"\n        }\n      },\n      \"id\": \"7e2mrDKuzmoSpS9WPHZycL3Ab52RNjdMrPLRduXM9TGi\",\n      \"metadata\": {\n        \"displayName\": \"uniswap-v2-base\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmVeyHjXivX8mY7bzWdbHDyA5z9ojgJdTu6uwFJsJvUzYR\"\n        }\n      },\n      \"id\": \"GqzP4Xaehti8KSfQmv3ZctFSjnSUYZ4En5NRsiTbvZpz\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Base\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmZzsQGDmQFbzYkv2qx4pVnD6aVnuhKbD3t1ea7SAvV7zE\"\n        }\n      },\n      \"id\": \"FEtpnfQ1aqF8um2YktEkfzFD11ZKrfurvBLPeQzv9JB1\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V2 Dev\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmZzsQGDmQFbzYkv2qx4pVnD6aVnuhKbD3t1ea7SAvV7zE\"\n        }\n      },\n      \"id\": \"EYCKATKGBKLWvSfwvBjzfCBmGwYNdVkduYXVivCsLRFu\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V2\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmZzsQGDmQFbzYkv2qx4pVnD6aVnuhKbD3t1ea7SAvV7zE\"\n        }\n      },\n      \"id\": \"A3Np3RQbaBA6oKJgiwDJeo5T3zrYfGHPWFYayMwtNDum\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V2\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmWEfBuWNqtYwj6XcJyESVVeiN3UmcphMcVjySR1Qqm1yE\"\n        }\n      },\n      \"id\": \"7XgdLW3bts4HktCYsu9dy8bEnuiNeZuftcuK3Aj4JXYV\",\n      \"metadata\": {\n        \"displayName\": \"uniswap-v3-bsc\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmdAoDVjfSByKvTW1HrCDK1eJJKRRZxdj8bcqVqQLCofN4\"\n        }\n      },\n      \"id\": \"EgnS9YE1avupkvCNj9fHnJxppfEmNNywYJtghqiu2pd9\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Optimism\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"Qmcdu8weFbmtZpeZaGs8vCpSdWKRPwyvDMX6CftYnW2KZB\"\n        }\n      },\n      \"id\": \"HyW7A86UEdYVt5b9Lrw8W2F98yKecerHKutZTRbSCX27\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Arbitrum\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"Qmcdu8weFbmtZpeZaGs8vCpSdWKRPwyvDMX6CftYnW2KZB\"\n        }\n      },\n      \"id\": \"3V7ZY6muhxaQL5qvntX1CFXJ32W7BxXZTGTwmpH5J4t3\",\n      \"metadata\": {\n        \"displayName\": \"Uniswap V3 Arbitrum\"\n      }\n    },\n    {\n      \"currentVersion\": {\n        \"subgraphDeployment\": {\n          \"ipfsHash\": \"QmWqwrVtcTzZzbTLGLgiRSQzbZ7MTH53VwqK4AxXVmf7n3\"\n        }\n      },\n      \"id\": \"4A3fq2YYzT5poS9TW4ky9YjPnsBdh1pHGCRKD1UQBvhJ\",\n      \"metadata\": {\n        \"displayName\": \"uniswap-v3-matic\"\n      }\n    }\n  ],\n  \"total\": 478\n}"
+        }
+      ],
+      "isError": false,
+      "elapsed_ms": 715,
+      "provenance": {
+        "source": "mcp",
+        "server": {
+          "name": "subgraph-mcp",
+          "url": "https://subgraphs.mcp.thegraph.com/sse",
+          "transport": "sse",
+          "protocol_version": "2024-11-05",
+          "authenticated": false,
+          "server_name": "subgraph-mcp",
+          "server_version": "0.1.1"
+        },
+        "tool": "search_subgraphs_by_keyword",
+        "arguments": {
+          "keyword": "uniswap"
+        },
+        "arguments_sha256": "f88c4af15947162bc4cd432fe7a185af86f82294623544fa993eff20a11cce82",
+        "fetched_at": 1789309282103
+      }
+    },
+    "volume": {
+      "text": "{\n  \"deployments\": [\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmQmz5kh1f83Re1Zaj9UYrzKmcWqpKf1tNs9K6M9WrvPC8\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmTZ8ejXJxRo7vDBS4uwqBeGoxLSWbhaA7oXa1RvxunLy7\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmVeyHjXivX8mY7bzWdbHDyA5z9ojgJdTu6uwFJsJvUzYR\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmWEfBuWNqtYwj6XcJyESVVeiN3UmcphMcVjySR1Qqm1yE\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmWFi6uciaQPQmo1xRrahNwfiWLGeN9GTDJMuCfV8iVXSe\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmWqwrVtcTzZzbTLGLgiRSQzbZ7MTH53VwqK4AxXVmf7n3\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmXMJ2Hnhhoz6bGFNtTBjnf7kAk9CNCQG7r4R5b7fyVjD7\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmZ5uwhnwsJXAQGYEF8qKPQ85iVhYAcVZcZAPfrF7ZNb9z\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmZk7ThfQVkwhwckCPtqXmxC8SRD99gLeF9pxfYfEiVwV1\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmZzsQGDmQFbzYkv2qx4pVnD6aVnuhKbD3t1ea7SAvV7zE\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmbQBjZ1VUK42k1V6sn6PnP3BZ1vLZhUmzfDpyF9Eiwfgt\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmbTaWMFk4baXnoKQodnyYsFVKFNEiLsgZAe6eu2Sdj8Ef\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"Qmbsc6XQWbiv4DfLVfaNciScqYLyDWUYjWzrFBbzzmRsMB\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"Qmcdu8weFbmtZpeZaGs8vCpSdWKRPwyvDMX6CftYnW2KZB\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmdAaDAUDCypVB85eFUkQMkS5DE1HV4s7WJb6iSiygNvAw\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmdAoDVjfSByKvTW1HrCDK1eJJKRRZxdj8bcqVqQLCofN4\",\n      \"total_query_count\": 0\n    }\n  ],\n  \"total_deployments_processed\": 16\n}",
+      "json": {
+        "deployments": [
+          {
+            "data_points_count": 0,
+            "ipfs_hash": "QmQmz5kh1f83Re1Zaj9UYrzKmcWqpKf1tNs9K6M9WrvPC8",
+            "total_query_count": 0
+          },
+          {
+            "data_points_count": 0,
+            "ipfs_hash": "QmTZ8ejXJxRo7vDBS4uwqBeGoxLSWbhaA7oXa1RvxunLy7",
+            "total_query_count": 0
+          },
+          {
+            "data_points_count": 0,
+            "ipfs_hash": "QmVeyHjXivX8mY7bzWdbHDyA5z9ojgJdTu6uwFJsJvUzYR",
+            "total_query_count": 0
+          },
+          {
+            "data_points_count": 0,
+            "ipfs_hash": "QmWEfBuWNqtYwj6XcJyESVVeiN3UmcphMcVjySR1Qqm1yE",
+            "total_query_count": 0
+          },
+          {
+            "data_points_count": 0,
+            "ipfs_hash": "QmWFi6uciaQPQmo1xRrahNwfiWLGeN9GTDJMuCfV8iVXSe",
+            "total_query_count": 0
+          },
+          {
+            "data_points_count": 0,
+            "ipfs_hash": "QmWqwrVtcTzZzbTLGLgiRSQzbZ7MTH53VwqK4AxXVmf7n3",
+            "total_query_count": 0
+          },
+          {
+            "data_points_count": 0,
+            "ipfs_hash": "QmXMJ2Hnhhoz6bGFNtTBjnf7kAk9CNCQG7r4R5b7fyVjD7",
+            "total_query_count": 0
+          },
+          {
+            "data_points_count": 0,
+            "ipfs_hash": "QmZ5uwhnwsJXAQGYEF8qKPQ85iVhYAcVZcZAPfrF7ZNb9z",
+            "total_query_count": 0
+          },
+          {
+            "data_points_count": 0,
+            "ipfs_hash": "QmZk7ThfQVkwhwckCPtqXmxC8SRD99gLeF9pxfYfEiVwV1",
+            "total_query_count": 0
+          },
+          {
+            "data_points_count": 0,
+            "ipfs_hash": "QmZzsQGDmQFbzYkv2qx4pVnD6aVnuhKbD3t1ea7SAvV7zE",
+            "total_query_count": 0
+          },
+          {
+            "data_points_count": 0,
+            "ipfs_hash": "QmbQBjZ1VUK42k1V6sn6PnP3BZ1vLZhUmzfDpyF9Eiwfgt",
+            "total_query_count": 0
+          },
+          {
+            "data_points_count": 0,
+            "ipfs_hash": "QmbTaWMFk4baXnoKQodnyYsFVKFNEiLsgZAe6eu2Sdj8Ef",
+            "total_query_count": 0
+          },
+          {
+            "data_points_count": 0,
+            "ipfs_hash": "Qmbsc6XQWbiv4DfLVfaNciScqYLyDWUYjWzrFBbzzmRsMB",
+            "total_query_count": 0
+          },
+          {
+            "data_points_count": 0,
+            "ipfs_hash": "Qmcdu8weFbmtZpeZaGs8vCpSdWKRPwyvDMX6CftYnW2KZB",
+            "total_query_count": 0
+          },
+          {
+            "data_points_count": 0,
+            "ipfs_hash": "QmdAaDAUDCypVB85eFUkQMkS5DE1HV4s7WJb6iSiygNvAw",
+            "total_query_count": 0
+          },
+          {
+            "data_points_count": 0,
+            "ipfs_hash": "QmdAoDVjfSByKvTW1HrCDK1eJJKRRZxdj8bcqVqQLCofN4",
+            "total_query_count": 0
+          }
+        ],
+        "total_deployments_processed": 16
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"deployments\": [\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmQmz5kh1f83Re1Zaj9UYrzKmcWqpKf1tNs9K6M9WrvPC8\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmTZ8ejXJxRo7vDBS4uwqBeGoxLSWbhaA7oXa1RvxunLy7\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmVeyHjXivX8mY7bzWdbHDyA5z9ojgJdTu6uwFJsJvUzYR\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmWEfBuWNqtYwj6XcJyESVVeiN3UmcphMcVjySR1Qqm1yE\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmWFi6uciaQPQmo1xRrahNwfiWLGeN9GTDJMuCfV8iVXSe\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmWqwrVtcTzZzbTLGLgiRSQzbZ7MTH53VwqK4AxXVmf7n3\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmXMJ2Hnhhoz6bGFNtTBjnf7kAk9CNCQG7r4R5b7fyVjD7\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmZ5uwhnwsJXAQGYEF8qKPQ85iVhYAcVZcZAPfrF7ZNb9z\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmZk7ThfQVkwhwckCPtqXmxC8SRD99gLeF9pxfYfEiVwV1\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmZzsQGDmQFbzYkv2qx4pVnD6aVnuhKbD3t1ea7SAvV7zE\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmbQBjZ1VUK42k1V6sn6PnP3BZ1vLZhUmzfDpyF9Eiwfgt\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmbTaWMFk4baXnoKQodnyYsFVKFNEiLsgZAe6eu2Sdj8Ef\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"Qmbsc6XQWbiv4DfLVfaNciScqYLyDWUYjWzrFBbzzmRsMB\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"Qmcdu8weFbmtZpeZaGs8vCpSdWKRPwyvDMX6CftYnW2KZB\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmdAaDAUDCypVB85eFUkQMkS5DE1HV4s7WJb6iSiygNvAw\",\n      \"total_query_count\": 0\n    },\n    {\n      \"data_points_count\": 0,\n      \"ipfs_hash\": \"QmdAoDVjfSByKvTW1HrCDK1eJJKRRZxdj8bcqVqQLCofN4\",\n      \"total_query_count\": 0\n    }\n  ],\n  \"total_deployments_processed\": 16\n}"
+        }
+      ],
+      "isError": false,
+      "elapsed_ms": 460,
+      "provenance": {
+        "source": "mcp",
+        "server": {
+          "name": "subgraph-mcp",
+          "url": "https://subgraphs.mcp.thegraph.com/sse",
+          "transport": "sse",
+          "protocol_version": "2024-11-05",
+          "authenticated": false,
+          "server_name": "subgraph-mcp",
+          "server_version": "0.1.1"
+        },
+        "tool": "get_deployment_30day_query_counts",
+        "arguments": {
+          "ipfs_hashes": [
+            "Qmbsc6XQWbiv4DfLVfaNciScqYLyDWUYjWzrFBbzzmRsMB",
+            "QmTZ8ejXJxRo7vDBS4uwqBeGoxLSWbhaA7oXa1RvxunLy7",
+            "QmZk7ThfQVkwhwckCPtqXmxC8SRD99gLeF9pxfYfEiVwV1",
+            "QmWFi6uciaQPQmo1xRrahNwfiWLGeN9GTDJMuCfV8iVXSe",
+            "QmbTaWMFk4baXnoKQodnyYsFVKFNEiLsgZAe6eu2Sdj8Ef",
+            "QmdAaDAUDCypVB85eFUkQMkS5DE1HV4s7WJb6iSiygNvAw",
+            "QmXMJ2Hnhhoz6bGFNtTBjnf7kAk9CNCQG7r4R5b7fyVjD7",
+            "QmbQBjZ1VUK42k1V6sn6PnP3BZ1vLZhUmzfDpyF9Eiwfgt",
+            "QmZ5uwhnwsJXAQGYEF8qKPQ85iVhYAcVZcZAPfrF7ZNb9z",
+            "QmQmz5kh1f83Re1Zaj9UYrzKmcWqpKf1tNs9K6M9WrvPC8",
+            "QmVeyHjXivX8mY7bzWdbHDyA5z9ojgJdTu6uwFJsJvUzYR",
+            "QmZzsQGDmQFbzYkv2qx4pVnD6aVnuhKbD3t1ea7SAvV7zE",
+            "QmWEfBuWNqtYwj6XcJyESVVeiN3UmcphMcVjySR1Qqm1yE",
+            "QmdAoDVjfSByKvTW1HrCDK1eJJKRRZxdj8bcqVqQLCofN4",
+            "Qmcdu8weFbmtZpeZaGs8vCpSdWKRPwyvDMX6CftYnW2KZB",
+            "QmWqwrVtcTzZzbTLGLgiRSQzbZ7MTH53VwqK4AxXVmf7n3"
+          ]
+        },
+        "arguments_sha256": "a0a7bb6b39ea0d78417b7cb621de8a6d88700e681f68fd87bdd741111a865d77",
+        "fetched_at": 1789309282563
+      }
+    },
+    "schema": {
+      "text": "type Factory @entity {\r\n  # factory address\r\n  id: ID!\r\n  # amount of pools created\r\n  poolCount: BigInt!\r\n  # amoutn of transactions all time\r\n  txCount: BigInt!\r\n  # total volume all time in derived USD\r\n  totalVolumeUSD: BigDecimal!\r\n  # total volume all time in derived ETH\r\n  totalVolumeETH: BigDecimal!\r\n  # total swap fees all time in USD\r\n  totalFeesUSD: BigDecimal!\r\n  # total swap fees all time in USD\r\n  totalFeesETH: BigDecimal!\r\n  # all volume even through less reliable USD values\r\n  untrackedVolumeUSD: BigDecimal!\r\n  # TVL derived in USD\r\n  totalValueLockedUSD: BigDecimal!\r\n  # TVL derived in ETH\r\n  totalValueLockedETH: BigDecimal!\r\n  # TVL derived in USD untracked\r\n  totalValueLockedUSDUntracked: BigDecimal!\r\n  # TVL derived in ETH untracked\r\n  totalValueLockedETHUntracked: BigDecimal!\r\n\r\n  # current owner of the factory\r\n  owner: ID!\r\n}\r\n\r\n# stores for USD calculations\r\ntype Bundle @entity {\r\n  id: ID!\r\n  # price of ETH in usd\r\n  ethPriceUSD: BigDecimal!\r\n}\r\n\r\ntype Token @entity {\r\n  # token address\r\n  id: ID!\r\n  # token symbol\r\n  symbol: String!\r\n  # token name\r\n  name: String!\r\n  # token decimals\r\n  decimals: BigInt!\r\n  # token total supply\r\n  totalSupply: BigInt!\r\n  # volume in token units\r\n  volume: BigDecimal!\r\n  # volume in derived USD\r\n  volumeUSD: BigDecimal!\r\n  # volume in USD even on pools with less reliable USD values\r\n  untrackedVolumeUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # transactions across all pools that include this token\r\n  txCount: BigInt!\r\n  # number of pools containing this token\r\n  poolCount: BigInt!\r\n  # liquidity across all pools in token units\r\n  totalValueLocked: BigDecimal!\r\n  # liquidity across all pools in derived USD\r\n  totalValueLockedUSD: BigDecimal!\r\n  # TVL derived in USD untracked\r\n  totalValueLockedUSDUntracked: BigDecimal!\r\n  # derived price in ETH\r\n  derivedETH: BigDecimal!\r\n  # pools token is in that are white listed for USD pricing\r\n  whitelistPools: [Pool!]!\r\n  # derived fields\r\n  tokenDayData: [TokenDayData!]! @derivedFrom(field: \"token\")\r\n}\r\n\r\ntype Pool @entity {\r\n  # pool address\r\n  id: ID!\r\n  # creation\r\n  createdAtTimestamp: BigInt!\r\n  # block pool was created at\r\n  createdAtBlockNumber: BigInt!\r\n  # token0\r\n  token0: Token!\r\n  # token1\r\n  token1: Token!\r\n  # fee amount\r\n  feeTier: BigInt!\r\n  # in range liquidity\r\n  liquidity: BigInt!\r\n  # current price tracker\r\n  sqrtPrice: BigInt!\r\n  # tracker for global fee growth\r\n  feeGrowthGlobal0X128: BigInt!\r\n  # tracker for global fee growth\r\n  feeGrowthGlobal1X128: BigInt!\r\n  # token0 per token1\r\n  token0Price: BigDecimal!\r\n  # token1 per token0\r\n  token1Price: BigDecimal!\r\n  # current tick\r\n  tick: BigInt\r\n  # current observation index\r\n  observationIndex: BigInt!\r\n  # all time token0 swapped\r\n  volumeToken0: BigDecimal!\r\n  # all time token1 swapped\r\n  volumeToken1: BigDecimal!\r\n  # all time USD swapped\r\n  volumeUSD: BigDecimal!\r\n  # all time USD swapped, unfiltered for unreliable USD pools\r\n  untrackedVolumeUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # all time number of transactions\r\n  txCount: BigInt!\r\n  # all time fees collected token0\r\n  collectedFeesToken0: BigDecimal!\r\n  # all time fees collected token1\r\n  collectedFeesToken1: BigDecimal!\r\n  # all time fees collected derived USD\r\n  collectedFeesUSD: BigDecimal!\r\n  # total token 0 across all ticks\r\n  totalValueLockedToken0: BigDecimal!\r\n  # total token 1 across all ticks\r\n  totalValueLockedToken1: BigDecimal!\r\n  # tvl derived ETH\r\n  totalValueLockedETH: BigDecimal!\r\n  # tvl USD\r\n  totalValueLockedUSD: BigDecimal!\r\n  # TVL derived in USD untracked\r\n  totalValueLockedUSDUntracked: BigDecimal!\r\n  # Fields used to help derived relationship\r\n  liquidityProviderCount: BigInt! # used to detect new exchanges\r\n  # hourly snapshots of pool data\r\n  poolHourData: [PoolHourData!]! @derivedFrom(field: \"pool\")\r\n  # daily snapshots of pool data\r\n  poolDayData: [PoolDayData!]! @derivedFrom(field: \"pool\")\r\n  # derived fields\r\n  mints: [Mint!]! @derivedFrom(field: \"pool\")\r\n  burns: [Burn!]! @derivedFrom(field: \"pool\")\r\n  swaps: [Swap!]! @derivedFrom(field: \"pool\")\r\n  collects: [Collect!]! @derivedFrom(field: \"pool\")\r\n  ticks: [Tick!]! @derivedFrom(field: \"pool\")\r\n}\r\n\r\ntype Tick @entity {\r\n  # format: <pool address>#<tick index>\r\n  id: ID!\r\n  # pool address\r\n  poolAddress: String\r\n  # tick index\r\n  tickIdx: BigInt!\r\n  # pointer to pool\r\n  pool: Pool!\r\n  # total liquidity pool has as tick lower or upper\r\n  liquidityGross: BigInt!\r\n  # how much liquidity changes when tick crossed\r\n  liquidityNet: BigInt!\r\n  # calculated price of token0 of tick within this pool - constant\r\n  price0: BigDecimal!\r\n  # calculated price of token1 of tick within this pool - constant\r\n  price1: BigDecimal!\r\n  # lifetime volume of token0 with this tick in range\r\n  volumeToken0: BigDecimal!\r\n  # lifetime volume of token1 with this tick in range\r\n  volumeToken1: BigDecimal!\r\n  # lifetime volume in derived USD with this tick in range\r\n  volumeUSD: BigDecimal!\r\n  # lifetime volume in untracked USD with this tick in range\r\n  untrackedVolumeUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # all time collected fees in token0\r\n  collectedFeesToken0: BigDecimal!\r\n  # all time collected fees in token1\r\n  collectedFeesToken1: BigDecimal!\r\n  # all time collected fees in USD\r\n  collectedFeesUSD: BigDecimal!\r\n  # created time\r\n  createdAtTimestamp: BigInt!\r\n  # created block\r\n  createdAtBlockNumber: BigInt!\r\n  # Fields used to help derived relationship\r\n  liquidityProviderCount: BigInt! # used to detect new exchanges\r\n  # derived fields\r\n  # swaps: [Swap!]! @derivedFrom(field: \"tick\")\r\n  # vars needed for fee computation\r\n  feeGrowthOutside0X128: BigInt!\r\n  feeGrowthOutside1X128: BigInt!\r\n}\r\n\r\ntype Position @entity {\r\n  # Positions created through NonfungiblePositionManager\r\n  # NFT token id\r\n  id: ID!\r\n  # owner of the NFT\r\n  owner: Bytes!\r\n  # pool position is within\r\n  pool: Pool!\r\n  # allow indexing by tokens\r\n  token0: Token!\r\n  # allow indexing by tokens\r\n  token1: Token!\r\n  # lower tick of the position\r\n  tickLower: Tick!\r\n  # upper tick of the position\r\n  tickUpper: Tick!\r\n  # total position liquidity\r\n  liquidity: BigInt!\r\n  # amount of token 0 ever deposited to position\r\n  depositedToken0: BigDecimal!\r\n  # amount of token 1 ever deposited to position\r\n  depositedToken1: BigDecimal!\r\n  # amount of token 0 ever withdrawn from position (without fees)\r\n  withdrawnToken0: BigDecimal!\r\n  # amount of token 1 ever withdrawn from position (without fees)\r\n  withdrawnToken1: BigDecimal!\r\n  # all time collected fees in token0\r\n  collectedFeesToken0: BigDecimal!\r\n  # all time collected fees in token1\r\n  collectedFeesToken1: BigDecimal!\r\n  # tx in which the position was initialized\r\n  transaction: Transaction!\r\n  # vars needed for fee computation\r\n  feeGrowthInside0LastX128: BigInt!\r\n  feeGrowthInside1LastX128: BigInt!\r\n}\r\n\r\ntype PositionSnapshot @entity {\r\n  # <NFT token id>#<block number>\r\n  id: ID!\r\n  # owner of the NFT\r\n  owner: Bytes!\r\n  # pool the position is within\r\n  pool: Pool!\r\n  # position of which the snap was taken of\r\n  position: Position!\r\n  # block in which the snap was created\r\n  blockNumber: BigInt!\r\n  # timestamp of block in which the snap was created\r\n  timestamp: BigInt!\r\n  # total position liquidity\r\n  liquidity: BigInt!\r\n  # amount of token 0 ever deposited to position\r\n  depositedToken0: BigDecimal!\r\n  # amount of token 1 ever deposited to position\r\n  depositedToken1: BigDecimal!\r\n  # amount of token 0 ever withdrawn from position (without fees)\r\n  withdrawnToken0: BigDecimal!\r\n  # amount of token 1 ever withdrawn from position (without fees)\r\n  withdrawnToken1: BigDecimal!\r\n  # all time collected fees in token0\r\n  collectedFeesToken0: BigDecimal!\r\n  # all time collected fees in token1\r\n  collectedFeesToken1: BigDecimal!\r\n  # tx in which the snapshot was initialized\r\n  transaction: Transaction!\r\n  # internal vars needed for fee computation\r\n  feeGrowthInside0LastX128: BigInt!\r\n  feeGrowthInside1LastX128: BigInt!\r\n}\r\n\r\ntype Transaction @entity {\r\n  # txn hash\r\n  id: ID!\r\n  # block txn was included in\r\n  blockNumber: BigInt!\r\n  # timestamp txn was confirmed\r\n  timestamp: BigInt!\r\n  # gas used during txn execution\r\n  gasUsed: BigInt!\r\n  gasPrice: BigInt!\r\n  # derived values\r\n  mints: [Mint]! @derivedFrom(field: \"transaction\")\r\n  burns: [Burn]! @derivedFrom(field: \"transaction\")\r\n  swaps: [Swap]! @derivedFrom(field: \"transaction\")\r\n  flashed: [Flash]! @derivedFrom(field: \"transaction\")\r\n  collects: [Collect]! @derivedFrom(field: \"transaction\")\r\n}\r\n\r\ntype Mint @entity {\r\n  # transaction hash + \"#\" + index in mints Transaction array\r\n  id: ID!\r\n  # which txn the mint was included in\r\n  transaction: Transaction!\r\n  # time of txn\r\n  timestamp: BigInt!\r\n  # pool position is within\r\n  pool: Pool!\r\n  # allow indexing by tokens\r\n  token0: Token!\r\n  # allow indexing by tokens\r\n  token1: Token!\r\n  # owner of position where liquidity minted to\r\n  owner: Bytes!\r\n  # the address that minted the liquidity\r\n  sender: Bytes\r\n  # txn origin\r\n  origin: Bytes! # the EOA that initiated the txn\r\n  # amount of liquidity minted\r\n  amount: BigInt!\r\n  # amount of token 0 minted\r\n  amount0: BigDecimal!\r\n  # amount of token 1 minted\r\n  amount1: BigDecimal!\r\n  # derived amount based on available prices of tokens\r\n  amountUSD: BigDecimal\r\n  # lower tick of the position\r\n  tickLower: BigInt!\r\n  # upper tick of the position\r\n  tickUpper: BigInt!\r\n  # order within the txn\r\n  logIndex: BigInt\r\n}\r\n\r\ntype Burn @entity {\r\n  # transaction hash + \"#\" + index in mints Transaction array\r\n  id: ID!\r\n  # txn burn was included in\r\n  transaction: Transaction!\r\n  # pool position is within\r\n  pool: Pool!\r\n  # allow indexing by tokens\r\n  token0: Token!\r\n  # allow indexing by tokens\r\n  token1: Token!\r\n  # need this to pull recent txns for specific token or pool\r\n  timestamp: BigInt!\r\n  # owner of position where liquidity was burned\r\n  owner: Bytes\r\n  # txn origin\r\n  origin: Bytes! # the EOA that initiated the txn\r\n  # amouny of liquidity burned\r\n  amount: BigInt!\r\n  # amount of token 0 burned\r\n  amount0: BigDecimal!\r\n  # amount of token 1 burned\r\n  amount1: BigDecimal!\r\n  # derived amount based on available prices of tokens\r\n  amountUSD: BigDecimal\r\n  # lower tick of position\r\n  tickLower: BigInt!\r\n  # upper tick of position\r\n  tickUpper: BigInt!\r\n  # position within the transactions\r\n  logIndex: BigInt\r\n}\r\n\r\ntype Swap @entity {\r\n  # transaction hash + \"#\" + index in swaps Transaction array\r\n  id: ID!\r\n  # pointer to transaction\r\n  transaction: Transaction!\r\n  # timestamp of transaction\r\n  timestamp: BigInt!\r\n  # pool swap occured within\r\n  pool: Pool!\r\n  # allow indexing by tokens\r\n  token0: Token!\r\n  # allow indexing by tokens\r\n  token1: Token!\r\n  # sender of the swap\r\n  sender: Bytes!\r\n  # recipient of the swap\r\n  recipient: Bytes!\r\n  # txn origin\r\n  origin: Bytes! # the EOA that initiated the txn\r\n  # delta of token0 swapped\r\n  amount0: BigDecimal!\r\n  # delta of token1 swapped\r\n  amount1: BigDecimal!\r\n  # derived info\r\n  amountUSD: BigDecimal!\r\n  # The sqrt(price) of the pool after the swap, as a Q64.96\r\n  sqrtPriceX96: BigInt!\r\n  # the tick after the swap\r\n  tick: BigInt!\r\n  # index within the txn\r\n  logIndex: BigInt\r\n}\r\n\r\ntype Collect @entity {\r\n  # transaction hash + \"#\" + index in collect Transaction array\r\n  id: ID!\r\n  # pointer to txn\r\n  transaction: Transaction!\r\n  # timestamp of event\r\n  timestamp: BigInt!\r\n  # pool collect occured within\r\n  pool: Pool!\r\n  # owner of position collect was performed on\r\n  owner: Bytes\r\n  # amount of token0 collected\r\n  amount0: BigDecimal!\r\n  # amount of token1 collected\r\n  amount1: BigDecimal!\r\n  # derived amount based on available prices of tokens\r\n  amountUSD: BigDecimal\r\n  # lower tick of position\r\n  tickLower: BigInt!\r\n  # uppper tick of position\r\n  tickUpper: BigInt!\r\n  # index within the txn\r\n  logIndex: BigInt\r\n}\r\n\r\ntype Flash @entity {\r\n  # transaction hash + \"-\" + index in collect Transaction array\r\n  id: ID!\r\n  # pointer to txn\r\n  transaction: Transaction!\r\n  # timestamp of event\r\n  timestamp: BigInt!\r\n  # pool collect occured within\r\n  pool: Pool!\r\n  # sender of the flash\r\n  sender: Bytes!\r\n  # recipient of the flash\r\n  recipient: Bytes!\r\n  # amount of token0 flashed\r\n  amount0: BigDecimal!\r\n  # amount of token1 flashed\r\n  amount1: BigDecimal!\r\n  # derived amount based on available prices of tokens\r\n  amountUSD: BigDecimal!\r\n  # amount token0 paid for flash\r\n  amount0Paid: BigDecimal!\r\n  # amount token1 paid for flash\r\n  amount1Paid: BigDecimal!\r\n  # index within the txn\r\n  logIndex: BigInt\r\n}\r\n\r\n# Data accumulated and condensed into day stats for all of Uniswap\r\ntype UniswapDayData @entity {\r\n  # timestamp rounded to current day by dividing by 86400\r\n  id: ID!\r\n  # timestamp rounded to current day by dividing by 86400\r\n  date: Int!\r\n  # total daily volume in Uniswap derived in terms of ETH\r\n  volumeETH: BigDecimal!\r\n  # total daily volume in Uniswap derived in terms of USD\r\n  volumeUSD: BigDecimal!\r\n  # total daily volume in Uniswap derived in terms of USD untracked\r\n  volumeUSDUntracked: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # number of daily transactions\r\n  txCount: BigInt!\r\n  # tvl in terms of USD\r\n  tvlUSD: BigDecimal!\r\n}\r\n\r\n# Data accumulated and condensed into day stats for each pool\r\ntype PoolDayData @entity {\r\n  # timestamp rounded to current day by dividing by 86400\r\n  id: ID!\r\n  # timestamp rounded to current day by dividing by 86400\r\n  date: Int!\r\n  # pointer to pool\r\n  pool: Pool!\r\n  # in range liquidity at end of period\r\n  liquidity: BigInt!\r\n  # current price tracker at end of period\r\n  sqrtPrice: BigInt!\r\n  # price of token0 - derived from sqrtPrice\r\n  token0Price: BigDecimal!\r\n  # price of token1 - derived from sqrtPrice\r\n  token1Price: BigDecimal!\r\n  # current tick at end of period\r\n  tick: BigInt\r\n  # tracker for global fee growth\r\n  feeGrowthGlobal0X128: BigInt!\r\n  # tracker for global fee growth\r\n  feeGrowthGlobal1X128: BigInt!\r\n  # tvl derived in USD at end of period\r\n  tvlUSD: BigDecimal!\r\n  # volume in token0\r\n  volumeToken0: BigDecimal!\r\n  # volume in token1\r\n  volumeToken1: BigDecimal!\r\n  # volume in USD\r\n  volumeUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # numebr of transactions during period\r\n  txCount: BigInt!\r\n  # opening price of token0\r\n  open: BigDecimal!\r\n  # high price of token0\r\n  high: BigDecimal!\r\n  # low price of token0\r\n  low: BigDecimal!\r\n  # close price of token0\r\n  close: BigDecimal!\r\n}\r\n\r\n# hourly stats tracker for pool\r\ntype PoolHourData @entity {\r\n  # format: <pool address>-<timestamp>\r\n  id: ID!\r\n  # unix timestamp for start of hour\r\n  periodStartUnix: Int!\r\n  # pointer to pool\r\n  pool: Pool!\r\n  # in range liquidity at end of period\r\n  liquidity: BigInt!\r\n  # current price tracker at end of period\r\n  sqrtPrice: BigInt!\r\n  # price of token0 - derived from sqrtPrice\r\n  token0Price: BigDecimal!\r\n  # price of token1 - derived from sqrtPrice\r\n  token1Price: BigDecimal!\r\n  # current tick at end of period\r\n  tick: BigInt\r\n  # tracker for global fee growth\r\n  feeGrowthGlobal0X128: BigInt!\r\n  # tracker for global fee growth\r\n  feeGrowthGlobal1X128: BigInt!\r\n  # tvl derived in USD at end of period\r\n  tvlUSD: BigDecimal!\r\n  # volume in token0\r\n  volumeToken0: BigDecimal!\r\n  # volume in token1\r\n  volumeToken1: BigDecimal!\r\n  # volume in USD\r\n  volumeUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # numebr of transactions during period\r\n  txCount: BigInt!\r\n  # opening price of token0\r\n  open: BigDecimal!\r\n  # high price of token0\r\n  high: BigDecimal!\r\n  # low price of token0\r\n  low: BigDecimal!\r\n  # close price of token0\r\n  close: BigDecimal!\r\n}\r\n\r\ntype TickHourData @entity {\r\n  # format: <pool address>-<tick index>-<timestamp>\r\n  id: ID!\r\n  # unix timestamp for start of hour\r\n  periodStartUnix: Int!\r\n  # pointer to pool\r\n  pool: Pool!\r\n  # pointer to tick\r\n  tick: Tick!\r\n  # total liquidity pool has as tick lower or upper at end of period\r\n  liquidityGross: BigInt!\r\n  # how much liquidity changes when tick crossed at end of period\r\n  liquidityNet: BigInt!\r\n  # hourly volume of token0 with this tick in range\r\n  volumeToken0: BigDecimal!\r\n  # hourly volume of token1 with this tick in range\r\n  volumeToken1: BigDecimal!\r\n  # hourly volume in derived USD with this tick in range\r\n  volumeUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n}\r\n\r\n# Data accumulated and condensed into day stats for each exchange\r\n# Note: this entity gets saved only if there is a change during the day\r\ntype TickDayData @entity {\r\n  # format: <pool address>-<tick index>-<timestamp>\r\n  id: ID!\r\n  # timestamp rounded to current day by dividing by 86400\r\n  date: Int!\r\n  # pointer to pool\r\n  pool: Pool!\r\n  # pointer to tick\r\n  tick: Tick!\r\n  # total liquidity pool has as tick lower or upper at end of period\r\n  liquidityGross: BigInt!\r\n  # how much liquidity changes when tick crossed at end of period\r\n  liquidityNet: BigInt!\r\n  # hourly volume of token0 with this tick in range\r\n  volumeToken0: BigDecimal!\r\n  # hourly volume of token1 with this tick in range\r\n  volumeToken1: BigDecimal!\r\n  # hourly volume in derived USD with this tick in range\r\n  volumeUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # vars needed for fee computation\r\n  feeGrowthOutside0X128: BigInt!\r\n  feeGrowthOutside1X128: BigInt!\r\n}\r\n\r\ntype TokenDayData @entity {\r\n  # token address concatendated with date\r\n  id: ID!\r\n  # timestamp rounded to current day by dividing by 86400\r\n  date: Int!\r\n  # pointer to token\r\n  token: Token!\r\n  # volume in token units\r\n  volume: BigDecimal!\r\n  # volume in derived USD\r\n  volumeUSD: BigDecimal!\r\n  # volume in USD even on pools with less reliable USD values\r\n  untrackedVolumeUSD: BigDecimal!\r\n  # liquidity across all pools in token units\r\n  totalValueLocked: BigDecimal!\r\n  # liquidity across all pools in derived USD\r\n  totalValueLockedUSD: BigDecimal!\r\n  # price at end of period in USD\r\n  priceUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # opening price USD\r\n  open: BigDecimal!\r\n  # high price USD\r\n  high: BigDecimal!\r\n  # low price USD\r\n  low: BigDecimal!\r\n  # close price USD\r\n  close: BigDecimal!\r\n}\r\n\r\ntype TokenHourData @entity {\r\n  # token address concatendated with date\r\n  id: ID!\r\n  # unix timestamp for start of hour\r\n  periodStartUnix: Int!\r\n  # pointer to token\r\n  token: Token!\r\n  # volume in token units\r\n  volume: BigDecimal!\r\n  # volume in derived USD\r\n  volumeUSD: BigDecimal!\r\n  # volume in USD even on pools with less reliable USD values\r\n  untrackedVolumeUSD: BigDecimal!\r\n  # liquidity across all pools in token units\r\n  totalValueLocked: BigDecimal!\r\n  # liquidity across all pools in derived USD\r\n  totalValueLockedUSD: BigDecimal!\r\n  # price at end of period in USD\r\n  priceUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # opening price USD\r\n  open: BigDecimal!\r\n  # high price USD\r\n  high: BigDecimal!\r\n  # low price USD\r\n  low: BigDecimal!\r\n  # close price USD\r\n  close: BigDecimal!\r\n}\r\n",
+      "json": null,
+      "content": [
+        {
+          "type": "text",
+          "text": "type Factory @entity {\r\n  # factory address\r\n  id: ID!\r\n  # amount of pools created\r\n  poolCount: BigInt!\r\n  # amoutn of transactions all time\r\n  txCount: BigInt!\r\n  # total volume all time in derived USD\r\n  totalVolumeUSD: BigDecimal!\r\n  # total volume all time in derived ETH\r\n  totalVolumeETH: BigDecimal!\r\n  # total swap fees all time in USD\r\n  totalFeesUSD: BigDecimal!\r\n  # total swap fees all time in USD\r\n  totalFeesETH: BigDecimal!\r\n  # all volume even through less reliable USD values\r\n  untrackedVolumeUSD: BigDecimal!\r\n  # TVL derived in USD\r\n  totalValueLockedUSD: BigDecimal!\r\n  # TVL derived in ETH\r\n  totalValueLockedETH: BigDecimal!\r\n  # TVL derived in USD untracked\r\n  totalValueLockedUSDUntracked: BigDecimal!\r\n  # TVL derived in ETH untracked\r\n  totalValueLockedETHUntracked: BigDecimal!\r\n\r\n  # current owner of the factory\r\n  owner: ID!\r\n}\r\n\r\n# stores for USD calculations\r\ntype Bundle @entity {\r\n  id: ID!\r\n  # price of ETH in usd\r\n  ethPriceUSD: BigDecimal!\r\n}\r\n\r\ntype Token @entity {\r\n  # token address\r\n  id: ID!\r\n  # token symbol\r\n  symbol: String!\r\n  # token name\r\n  name: String!\r\n  # token decimals\r\n  decimals: BigInt!\r\n  # token total supply\r\n  totalSupply: BigInt!\r\n  # volume in token units\r\n  volume: BigDecimal!\r\n  # volume in derived USD\r\n  volumeUSD: BigDecimal!\r\n  # volume in USD even on pools with less reliable USD values\r\n  untrackedVolumeUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # transactions across all pools that include this token\r\n  txCount: BigInt!\r\n  # number of pools containing this token\r\n  poolCount: BigInt!\r\n  # liquidity across all pools in token units\r\n  totalValueLocked: BigDecimal!\r\n  # liquidity across all pools in derived USD\r\n  totalValueLockedUSD: BigDecimal!\r\n  # TVL derived in USD untracked\r\n  totalValueLockedUSDUntracked: BigDecimal!\r\n  # derived price in ETH\r\n  derivedETH: BigDecimal!\r\n  # pools token is in that are white listed for USD pricing\r\n  whitelistPools: [Pool!]!\r\n  # derived fields\r\n  tokenDayData: [TokenDayData!]! @derivedFrom(field: \"token\")\r\n}\r\n\r\ntype Pool @entity {\r\n  # pool address\r\n  id: ID!\r\n  # creation\r\n  createdAtTimestamp: BigInt!\r\n  # block pool was created at\r\n  createdAtBlockNumber: BigInt!\r\n  # token0\r\n  token0: Token!\r\n  # token1\r\n  token1: Token!\r\n  # fee amount\r\n  feeTier: BigInt!\r\n  # in range liquidity\r\n  liquidity: BigInt!\r\n  # current price tracker\r\n  sqrtPrice: BigInt!\r\n  # tracker for global fee growth\r\n  feeGrowthGlobal0X128: BigInt!\r\n  # tracker for global fee growth\r\n  feeGrowthGlobal1X128: BigInt!\r\n  # token0 per token1\r\n  token0Price: BigDecimal!\r\n  # token1 per token0\r\n  token1Price: BigDecimal!\r\n  # current tick\r\n  tick: BigInt\r\n  # current observation index\r\n  observationIndex: BigInt!\r\n  # all time token0 swapped\r\n  volumeToken0: BigDecimal!\r\n  # all time token1 swapped\r\n  volumeToken1: BigDecimal!\r\n  # all time USD swapped\r\n  volumeUSD: BigDecimal!\r\n  # all time USD swapped, unfiltered for unreliable USD pools\r\n  untrackedVolumeUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # all time number of transactions\r\n  txCount: BigInt!\r\n  # all time fees collected token0\r\n  collectedFeesToken0: BigDecimal!\r\n  # all time fees collected token1\r\n  collectedFeesToken1: BigDecimal!\r\n  # all time fees collected derived USD\r\n  collectedFeesUSD: BigDecimal!\r\n  # total token 0 across all ticks\r\n  totalValueLockedToken0: BigDecimal!\r\n  # total token 1 across all ticks\r\n  totalValueLockedToken1: BigDecimal!\r\n  # tvl derived ETH\r\n  totalValueLockedETH: BigDecimal!\r\n  # tvl USD\r\n  totalValueLockedUSD: BigDecimal!\r\n  # TVL derived in USD untracked\r\n  totalValueLockedUSDUntracked: BigDecimal!\r\n  # Fields used to help derived relationship\r\n  liquidityProviderCount: BigInt! # used to detect new exchanges\r\n  # hourly snapshots of pool data\r\n  poolHourData: [PoolHourData!]! @derivedFrom(field: \"pool\")\r\n  # daily snapshots of pool data\r\n  poolDayData: [PoolDayData!]! @derivedFrom(field: \"pool\")\r\n  # derived fields\r\n  mints: [Mint!]! @derivedFrom(field: \"pool\")\r\n  burns: [Burn!]! @derivedFrom(field: \"pool\")\r\n  swaps: [Swap!]! @derivedFrom(field: \"pool\")\r\n  collects: [Collect!]! @derivedFrom(field: \"pool\")\r\n  ticks: [Tick!]! @derivedFrom(field: \"pool\")\r\n}\r\n\r\ntype Tick @entity {\r\n  # format: <pool address>#<tick index>\r\n  id: ID!\r\n  # pool address\r\n  poolAddress: String\r\n  # tick index\r\n  tickIdx: BigInt!\r\n  # pointer to pool\r\n  pool: Pool!\r\n  # total liquidity pool has as tick lower or upper\r\n  liquidityGross: BigInt!\r\n  # how much liquidity changes when tick crossed\r\n  liquidityNet: BigInt!\r\n  # calculated price of token0 of tick within this pool - constant\r\n  price0: BigDecimal!\r\n  # calculated price of token1 of tick within this pool - constant\r\n  price1: BigDecimal!\r\n  # lifetime volume of token0 with this tick in range\r\n  volumeToken0: BigDecimal!\r\n  # lifetime volume of token1 with this tick in range\r\n  volumeToken1: BigDecimal!\r\n  # lifetime volume in derived USD with this tick in range\r\n  volumeUSD: BigDecimal!\r\n  # lifetime volume in untracked USD with this tick in range\r\n  untrackedVolumeUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # all time collected fees in token0\r\n  collectedFeesToken0: BigDecimal!\r\n  # all time collected fees in token1\r\n  collectedFeesToken1: BigDecimal!\r\n  # all time collected fees in USD\r\n  collectedFeesUSD: BigDecimal!\r\n  # created time\r\n  createdAtTimestamp: BigInt!\r\n  # created block\r\n  createdAtBlockNumber: BigInt!\r\n  # Fields used to help derived relationship\r\n  liquidityProviderCount: BigInt! # used to detect new exchanges\r\n  # derived fields\r\n  # swaps: [Swap!]! @derivedFrom(field: \"tick\")\r\n  # vars needed for fee computation\r\n  feeGrowthOutside0X128: BigInt!\r\n  feeGrowthOutside1X128: BigInt!\r\n}\r\n\r\ntype Position @entity {\r\n  # Positions created through NonfungiblePositionManager\r\n  # NFT token id\r\n  id: ID!\r\n  # owner of the NFT\r\n  owner: Bytes!\r\n  # pool position is within\r\n  pool: Pool!\r\n  # allow indexing by tokens\r\n  token0: Token!\r\n  # allow indexing by tokens\r\n  token1: Token!\r\n  # lower tick of the position\r\n  tickLower: Tick!\r\n  # upper tick of the position\r\n  tickUpper: Tick!\r\n  # total position liquidity\r\n  liquidity: BigInt!\r\n  # amount of token 0 ever deposited to position\r\n  depositedToken0: BigDecimal!\r\n  # amount of token 1 ever deposited to position\r\n  depositedToken1: BigDecimal!\r\n  # amount of token 0 ever withdrawn from position (without fees)\r\n  withdrawnToken0: BigDecimal!\r\n  # amount of token 1 ever withdrawn from position (without fees)\r\n  withdrawnToken1: BigDecimal!\r\n  # all time collected fees in token0\r\n  collectedFeesToken0: BigDecimal!\r\n  # all time collected fees in token1\r\n  collectedFeesToken1: BigDecimal!\r\n  # tx in which the position was initialized\r\n  transaction: Transaction!\r\n  # vars needed for fee computation\r\n  feeGrowthInside0LastX128: BigInt!\r\n  feeGrowthInside1LastX128: BigInt!\r\n}\r\n\r\ntype PositionSnapshot @entity {\r\n  # <NFT token id>#<block number>\r\n  id: ID!\r\n  # owner of the NFT\r\n  owner: Bytes!\r\n  # pool the position is within\r\n  pool: Pool!\r\n  # position of which the snap was taken of\r\n  position: Position!\r\n  # block in which the snap was created\r\n  blockNumber: BigInt!\r\n  # timestamp of block in which the snap was created\r\n  timestamp: BigInt!\r\n  # total position liquidity\r\n  liquidity: BigInt!\r\n  # amount of token 0 ever deposited to position\r\n  depositedToken0: BigDecimal!\r\n  # amount of token 1 ever deposited to position\r\n  depositedToken1: BigDecimal!\r\n  # amount of token 0 ever withdrawn from position (without fees)\r\n  withdrawnToken0: BigDecimal!\r\n  # amount of token 1 ever withdrawn from position (without fees)\r\n  withdrawnToken1: BigDecimal!\r\n  # all time collected fees in token0\r\n  collectedFeesToken0: BigDecimal!\r\n  # all time collected fees in token1\r\n  collectedFeesToken1: BigDecimal!\r\n  # tx in which the snapshot was initialized\r\n  transaction: Transaction!\r\n  # internal vars needed for fee computation\r\n  feeGrowthInside0LastX128: BigInt!\r\n  feeGrowthInside1LastX128: BigInt!\r\n}\r\n\r\ntype Transaction @entity {\r\n  # txn hash\r\n  id: ID!\r\n  # block txn was included in\r\n  blockNumber: BigInt!\r\n  # timestamp txn was confirmed\r\n  timestamp: BigInt!\r\n  # gas used during txn execution\r\n  gasUsed: BigInt!\r\n  gasPrice: BigInt!\r\n  # derived values\r\n  mints: [Mint]! @derivedFrom(field: \"transaction\")\r\n  burns: [Burn]! @derivedFrom(field: \"transaction\")\r\n  swaps: [Swap]! @derivedFrom(field: \"transaction\")\r\n  flashed: [Flash]! @derivedFrom(field: \"transaction\")\r\n  collects: [Collect]! @derivedFrom(field: \"transaction\")\r\n}\r\n\r\ntype Mint @entity {\r\n  # transaction hash + \"#\" + index in mints Transaction array\r\n  id: ID!\r\n  # which txn the mint was included in\r\n  transaction: Transaction!\r\n  # time of txn\r\n  timestamp: BigInt!\r\n  # pool position is within\r\n  pool: Pool!\r\n  # allow indexing by tokens\r\n  token0: Token!\r\n  # allow indexing by tokens\r\n  token1: Token!\r\n  # owner of position where liquidity minted to\r\n  owner: Bytes!\r\n  # the address that minted the liquidity\r\n  sender: Bytes\r\n  # txn origin\r\n  origin: Bytes! # the EOA that initiated the txn\r\n  # amount of liquidity minted\r\n  amount: BigInt!\r\n  # amount of token 0 minted\r\n  amount0: BigDecimal!\r\n  # amount of token 1 minted\r\n  amount1: BigDecimal!\r\n  # derived amount based on available prices of tokens\r\n  amountUSD: BigDecimal\r\n  # lower tick of the position\r\n  tickLower: BigInt!\r\n  # upper tick of the position\r\n  tickUpper: BigInt!\r\n  # order within the txn\r\n  logIndex: BigInt\r\n}\r\n\r\ntype Burn @entity {\r\n  # transaction hash + \"#\" + index in mints Transaction array\r\n  id: ID!\r\n  # txn burn was included in\r\n  transaction: Transaction!\r\n  # pool position is within\r\n  pool: Pool!\r\n  # allow indexing by tokens\r\n  token0: Token!\r\n  # allow indexing by tokens\r\n  token1: Token!\r\n  # need this to pull recent txns for specific token or pool\r\n  timestamp: BigInt!\r\n  # owner of position where liquidity was burned\r\n  owner: Bytes\r\n  # txn origin\r\n  origin: Bytes! # the EOA that initiated the txn\r\n  # amouny of liquidity burned\r\n  amount: BigInt!\r\n  # amount of token 0 burned\r\n  amount0: BigDecimal!\r\n  # amount of token 1 burned\r\n  amount1: BigDecimal!\r\n  # derived amount based on available prices of tokens\r\n  amountUSD: BigDecimal\r\n  # lower tick of position\r\n  tickLower: BigInt!\r\n  # upper tick of position\r\n  tickUpper: BigInt!\r\n  # position within the transactions\r\n  logIndex: BigInt\r\n}\r\n\r\ntype Swap @entity {\r\n  # transaction hash + \"#\" + index in swaps Transaction array\r\n  id: ID!\r\n  # pointer to transaction\r\n  transaction: Transaction!\r\n  # timestamp of transaction\r\n  timestamp: BigInt!\r\n  # pool swap occured within\r\n  pool: Pool!\r\n  # allow indexing by tokens\r\n  token0: Token!\r\n  # allow indexing by tokens\r\n  token1: Token!\r\n  # sender of the swap\r\n  sender: Bytes!\r\n  # recipient of the swap\r\n  recipient: Bytes!\r\n  # txn origin\r\n  origin: Bytes! # the EOA that initiated the txn\r\n  # delta of token0 swapped\r\n  amount0: BigDecimal!\r\n  # delta of token1 swapped\r\n  amount1: BigDecimal!\r\n  # derived info\r\n  amountUSD: BigDecimal!\r\n  # The sqrt(price) of the pool after the swap, as a Q64.96\r\n  sqrtPriceX96: BigInt!\r\n  # the tick after the swap\r\n  tick: BigInt!\r\n  # index within the txn\r\n  logIndex: BigInt\r\n}\r\n\r\ntype Collect @entity {\r\n  # transaction hash + \"#\" + index in collect Transaction array\r\n  id: ID!\r\n  # pointer to txn\r\n  transaction: Transaction!\r\n  # timestamp of event\r\n  timestamp: BigInt!\r\n  # pool collect occured within\r\n  pool: Pool!\r\n  # owner of position collect was performed on\r\n  owner: Bytes\r\n  # amount of token0 collected\r\n  amount0: BigDecimal!\r\n  # amount of token1 collected\r\n  amount1: BigDecimal!\r\n  # derived amount based on available prices of tokens\r\n  amountUSD: BigDecimal\r\n  # lower tick of position\r\n  tickLower: BigInt!\r\n  # uppper tick of position\r\n  tickUpper: BigInt!\r\n  # index within the txn\r\n  logIndex: BigInt\r\n}\r\n\r\ntype Flash @entity {\r\n  # transaction hash + \"-\" + index in collect Transaction array\r\n  id: ID!\r\n  # pointer to txn\r\n  transaction: Transaction!\r\n  # timestamp of event\r\n  timestamp: BigInt!\r\n  # pool collect occured within\r\n  pool: Pool!\r\n  # sender of the flash\r\n  sender: Bytes!\r\n  # recipient of the flash\r\n  recipient: Bytes!\r\n  # amount of token0 flashed\r\n  amount0: BigDecimal!\r\n  # amount of token1 flashed\r\n  amount1: BigDecimal!\r\n  # derived amount based on available prices of tokens\r\n  amountUSD: BigDecimal!\r\n  # amount token0 paid for flash\r\n  amount0Paid: BigDecimal!\r\n  # amount token1 paid for flash\r\n  amount1Paid: BigDecimal!\r\n  # index within the txn\r\n  logIndex: BigInt\r\n}\r\n\r\n# Data accumulated and condensed into day stats for all of Uniswap\r\ntype UniswapDayData @entity {\r\n  # timestamp rounded to current day by dividing by 86400\r\n  id: ID!\r\n  # timestamp rounded to current day by dividing by 86400\r\n  date: Int!\r\n  # total daily volume in Uniswap derived in terms of ETH\r\n  volumeETH: BigDecimal!\r\n  # total daily volume in Uniswap derived in terms of USD\r\n  volumeUSD: BigDecimal!\r\n  # total daily volume in Uniswap derived in terms of USD untracked\r\n  volumeUSDUntracked: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # number of daily transactions\r\n  txCount: BigInt!\r\n  # tvl in terms of USD\r\n  tvlUSD: BigDecimal!\r\n}\r\n\r\n# Data accumulated and condensed into day stats for each pool\r\ntype PoolDayData @entity {\r\n  # timestamp rounded to current day by dividing by 86400\r\n  id: ID!\r\n  # timestamp rounded to current day by dividing by 86400\r\n  date: Int!\r\n  # pointer to pool\r\n  pool: Pool!\r\n  # in range liquidity at end of period\r\n  liquidity: BigInt!\r\n  # current price tracker at end of period\r\n  sqrtPrice: BigInt!\r\n  # price of token0 - derived from sqrtPrice\r\n  token0Price: BigDecimal!\r\n  # price of token1 - derived from sqrtPrice\r\n  token1Price: BigDecimal!\r\n  # current tick at end of period\r\n  tick: BigInt\r\n  # tracker for global fee growth\r\n  feeGrowthGlobal0X128: BigInt!\r\n  # tracker for global fee growth\r\n  feeGrowthGlobal1X128: BigInt!\r\n  # tvl derived in USD at end of period\r\n  tvlUSD: BigDecimal!\r\n  # volume in token0\r\n  volumeToken0: BigDecimal!\r\n  # volume in token1\r\n  volumeToken1: BigDecimal!\r\n  # volume in USD\r\n  volumeUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # numebr of transactions during period\r\n  txCount: BigInt!\r\n  # opening price of token0\r\n  open: BigDecimal!\r\n  # high price of token0\r\n  high: BigDecimal!\r\n  # low price of token0\r\n  low: BigDecimal!\r\n  # close price of token0\r\n  close: BigDecimal!\r\n}\r\n\r\n# hourly stats tracker for pool\r\ntype PoolHourData @entity {\r\n  # format: <pool address>-<timestamp>\r\n  id: ID!\r\n  # unix timestamp for start of hour\r\n  periodStartUnix: Int!\r\n  # pointer to pool\r\n  pool: Pool!\r\n  # in range liquidity at end of period\r\n  liquidity: BigInt!\r\n  # current price tracker at end of period\r\n  sqrtPrice: BigInt!\r\n  # price of token0 - derived from sqrtPrice\r\n  token0Price: BigDecimal!\r\n  # price of token1 - derived from sqrtPrice\r\n  token1Price: BigDecimal!\r\n  # current tick at end of period\r\n  tick: BigInt\r\n  # tracker for global fee growth\r\n  feeGrowthGlobal0X128: BigInt!\r\n  # tracker for global fee growth\r\n  feeGrowthGlobal1X128: BigInt!\r\n  # tvl derived in USD at end of period\r\n  tvlUSD: BigDecimal!\r\n  # volume in token0\r\n  volumeToken0: BigDecimal!\r\n  # volume in token1\r\n  volumeToken1: BigDecimal!\r\n  # volume in USD\r\n  volumeUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # numebr of transactions during period\r\n  txCount: BigInt!\r\n  # opening price of token0\r\n  open: BigDecimal!\r\n  # high price of token0\r\n  high: BigDecimal!\r\n  # low price of token0\r\n  low: BigDecimal!\r\n  # close price of token0\r\n  close: BigDecimal!\r\n}\r\n\r\ntype TickHourData @entity {\r\n  # format: <pool address>-<tick index>-<timestamp>\r\n  id: ID!\r\n  # unix timestamp for start of hour\r\n  periodStartUnix: Int!\r\n  # pointer to pool\r\n  pool: Pool!\r\n  # pointer to tick\r\n  tick: Tick!\r\n  # total liquidity pool has as tick lower or upper at end of period\r\n  liquidityGross: BigInt!\r\n  # how much liquidity changes when tick crossed at end of period\r\n  liquidityNet: BigInt!\r\n  # hourly volume of token0 with this tick in range\r\n  volumeToken0: BigDecimal!\r\n  # hourly volume of token1 with this tick in range\r\n  volumeToken1: BigDecimal!\r\n  # hourly volume in derived USD with this tick in range\r\n  volumeUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n}\r\n\r\n# Data accumulated and condensed into day stats for each exchange\r\n# Note: this entity gets saved only if there is a change during the day\r\ntype TickDayData @entity {\r\n  # format: <pool address>-<tick index>-<timestamp>\r\n  id: ID!\r\n  # timestamp rounded to current day by dividing by 86400\r\n  date: Int!\r\n  # pointer to pool\r\n  pool: Pool!\r\n  # pointer to tick\r\n  tick: Tick!\r\n  # total liquidity pool has as tick lower or upper at end of period\r\n  liquidityGross: BigInt!\r\n  # how much liquidity changes when tick crossed at end of period\r\n  liquidityNet: BigInt!\r\n  # hourly volume of token0 with this tick in range\r\n  volumeToken0: BigDecimal!\r\n  # hourly volume of token1 with this tick in range\r\n  volumeToken1: BigDecimal!\r\n  # hourly volume in derived USD with this tick in range\r\n  volumeUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # vars needed for fee computation\r\n  feeGrowthOutside0X128: BigInt!\r\n  feeGrowthOutside1X128: BigInt!\r\n}\r\n\r\ntype TokenDayData @entity {\r\n  # token address concatendated with date\r\n  id: ID!\r\n  # timestamp rounded to current day by dividing by 86400\r\n  date: Int!\r\n  # pointer to token\r\n  token: Token!\r\n  # volume in token units\r\n  volume: BigDecimal!\r\n  # volume in derived USD\r\n  volumeUSD: BigDecimal!\r\n  # volume in USD even on pools with less reliable USD values\r\n  untrackedVolumeUSD: BigDecimal!\r\n  # liquidity across all pools in token units\r\n  totalValueLocked: BigDecimal!\r\n  # liquidity across all pools in derived USD\r\n  totalValueLockedUSD: BigDecimal!\r\n  # price at end of period in USD\r\n  priceUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # opening price USD\r\n  open: BigDecimal!\r\n  # high price USD\r\n  high: BigDecimal!\r\n  # low price USD\r\n  low: BigDecimal!\r\n  # close price USD\r\n  close: BigDecimal!\r\n}\r\n\r\ntype TokenHourData @entity {\r\n  # token address concatendated with date\r\n  id: ID!\r\n  # unix timestamp for start of hour\r\n  periodStartUnix: Int!\r\n  # pointer to token\r\n  token: Token!\r\n  # volume in token units\r\n  volume: BigDecimal!\r\n  # volume in derived USD\r\n  volumeUSD: BigDecimal!\r\n  # volume in USD even on pools with less reliable USD values\r\n  untrackedVolumeUSD: BigDecimal!\r\n  # liquidity across all pools in token units\r\n  totalValueLocked: BigDecimal!\r\n  # liquidity across all pools in derived USD\r\n  totalValueLockedUSD: BigDecimal!\r\n  # price at end of period in USD\r\n  priceUSD: BigDecimal!\r\n  # fees in USD\r\n  feesUSD: BigDecimal!\r\n  # opening price USD\r\n  open: BigDecimal!\r\n  # high price USD\r\n  high: BigDecimal!\r\n  # low price USD\r\n  low: BigDecimal!\r\n  # close price USD\r\n  close: BigDecimal!\r\n}\r\n"
+        }
+      ],
+      "isError": false,
+      "elapsed_ms": 485,
+      "provenance": {
+        "source": "mcp",
+        "server": {
+          "name": "subgraph-mcp",
+          "url": "https://subgraphs.mcp.thegraph.com/sse",
+          "transport": "sse",
+          "protocol_version": "2024-11-05",
+          "authenticated": false,
+          "server_name": "subgraph-mcp",
+          "server_version": "0.1.1"
+        },
+        "tool": "get_schema_by_subgraph_id",
+        "arguments": {
+          "subgraph_id": "5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV"
+        },
+        "arguments_sha256": "a160c11e51f067339bd892f23016d0492484fef2bba699b2a1485fde309aa798",
+        "fetched_at": 1789309283048
+      }
+    },
+    "probe": {
+      "text": "{\n  \"data\": {\n    \"_meta\": {\n      \"block\": {\n        \"hash\": null,\n        \"number\": 25969047\n      },\n      \"deployment\": \"QmTZ8ejXJxRo7vDBS4uwqBeGoxLSWbhaA7oXa1RvxunLy7\",\n      \"hasIndexingErrors\": false\n    }\n  }\n}",
+      "json": {
+        "data": {
+          "_meta": {
+            "block": {
+              "hash": null,
+              "number": 25969047
+            },
+            "deployment": "QmTZ8ejXJxRo7vDBS4uwqBeGoxLSWbhaA7oXa1RvxunLy7",
+            "hasIndexingErrors": false
+          }
+        }
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"data\": {\n    \"_meta\": {\n      \"block\": {\n        \"hash\": null,\n        \"number\": 25969047\n      },\n      \"deployment\": \"QmTZ8ejXJxRo7vDBS4uwqBeGoxLSWbhaA7oXa1RvxunLy7\",\n      \"hasIndexingErrors\": false\n    }\n  }\n}"
+        }
+      ],
+      "isError": false,
+      "elapsed_ms": 463,
+      "provenance": {
+        "source": "mcp",
+        "server": {
+          "name": "subgraph-mcp",
+          "url": "https://subgraphs.mcp.thegraph.com/sse",
+          "transport": "sse",
+          "protocol_version": "2024-11-05",
+          "authenticated": false,
+          "server_name": "subgraph-mcp",
+          "server_version": "0.1.1"
+        },
+        "tool": "execute_query_by_subgraph_id",
+        "arguments": {
+          "subgraph_id": "5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV",
+          "query": "{\n  _meta(block: {number: 25969047}) {\n    block {\n      number\n      hash\n    }\n    deployment\n    hasIndexingErrors\n  }\n}"
+        },
+        "arguments_sha256": "f6566d1676c7d2f650e75e60043374d1d3a93c30f99b6fb65aafc112bb3c17ae",
+        "fetched_at": 1789309283529
+      }
+    },
+    "query": {
+      "text": "{\n  \"data\": {\n    \"_meta\": {\n      \"block\": {\n        \"hash\": null,\n        \"number\": 25969047\n      },\n      \"deployment\": \"QmTZ8ejXJxRo7vDBS4uwqBeGoxLSWbhaA7oXa1RvxunLy7\",\n      \"hasIndexingErrors\": false\n    },\n    \"tokens\": [\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\",\n        \"name\": \"Wrapped Ether\",\n        \"symbol\": \"WETH\"\n      },\n      {\n        \"decimals\": \"6\",\n        \"id\": \"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\",\n        \"name\": \"USD Coin\",\n        \"symbol\": \"USDC\"\n      },\n      {\n        \"decimals\": \"6\",\n        \"id\": \"0xdac17f958d2ee523a2206206994597c13d831ec7\",\n        \"name\": \"Tether USD\",\n        \"symbol\": \"USDT\"\n      },\n      {\n        \"decimals\": \"8\",\n        \"id\": \"0x2260fac5e5542a773aa44fbcfedf7c193bc2c599\",\n        \"name\": \"Wrapped BTC\",\n        \"symbol\": \"WBTC\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x6b175474e89094c44da98b954eedeac495271d0f\",\n        \"name\": \"Dai Stablecoin\",\n        \"symbol\": \"DAI\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x514910771af9ca656af840dff83e8264ecf986ca\",\n        \"name\": \"ChainLink Token\",\n        \"symbol\": \"LINK\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x1f9840a85d5af5bf1d1762f925bdaddc4201f984\",\n        \"name\": \"Uniswap\",\n        \"symbol\": \"UNI\"\n      },\n      {\n        \"decimals\": \"8\",\n        \"id\": \"0x2b591e99afe9f32eaa6214f7b7629768c40eeb39\",\n        \"name\": \"HEX\",\n        \"symbol\": \"HEX\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x6982508145454ce325ddbe47a25d4ec3d2311933\",\n        \"name\": \"Pepe\",\n        \"symbol\": \"PEPE\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0xf19308f923582a6f7c465e5ce7a9dc1bec6665b1\",\n        \"name\": \"TITAN X\",\n        \"symbol\": \"TITANX\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce\",\n        \"name\": \"SHIBA INU\",\n        \"symbol\": \"SHIB\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x57e114b691db790c35207b2e685d4a43181e6061\",\n        \"name\": \"ENA\",\n        \"symbol\": \"ENA\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9\",\n        \"name\": \"Aave Token\",\n        \"symbol\": \"AAVE\"\n      },\n      {\n        \"decimals\": \"6\",\n        \"id\": \"0x68749665ff8d2d112fa859aa293f07a622782f38\",\n        \"name\": \"Tether Gold\",\n        \"symbol\": \"XAUt\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x45804880de22913dafe09f4980848ece6ecbaf78\",\n        \"name\": \"Paxos Gold\",\n        \"symbol\": \"PAXG\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x4d224452801aced8b2f0aebe155379bb5d594381\",\n        \"name\": \"ApeCoin\",\n        \"symbol\": \"APE\"\n      },\n      {\n        \"decimals\": \"9\",\n        \"id\": \"0x77e06c9eccf2e797fd462a92b6d7642ef85b0a44\",\n        \"name\": \"Wrapped TAO\",\n        \"symbol\": \"wTAO\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0\",\n        \"name\": \"Wrapped liquid staked Ether 2.0\",\n        \"symbol\": \"wstETH\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x5a98fcbea516cf06857215779fd812ca3bef1b32\",\n        \"name\": \"Lido DAO Token\",\n        \"symbol\": \"LDO\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3\",\n        \"name\": \"Ondo\",\n        \"symbol\": \"ONDO\"\n      }\n    ]\n  }\n}",
+      "json": {
+        "data": {
+          "_meta": {
+            "block": {
+              "hash": null,
+              "number": 25969047
+            },
+            "deployment": "QmTZ8ejXJxRo7vDBS4uwqBeGoxLSWbhaA7oXa1RvxunLy7",
+            "hasIndexingErrors": false
+          },
+          "tokens": [
+            {
+              "decimals": "18",
+              "id": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+              "name": "Wrapped Ether",
+              "symbol": "WETH"
+            },
+            {
+              "decimals": "6",
+              "id": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+              "name": "USD Coin",
+              "symbol": "USDC"
+            },
+            {
+              "decimals": "6",
+              "id": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+              "name": "Tether USD",
+              "symbol": "USDT"
+            },
+            {
+              "decimals": "8",
+              "id": "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",
+              "name": "Wrapped BTC",
+              "symbol": "WBTC"
+            },
+            {
+              "decimals": "18",
+              "id": "0x6b175474e89094c44da98b954eedeac495271d0f",
+              "name": "Dai Stablecoin",
+              "symbol": "DAI"
+            },
+            {
+              "decimals": "18",
+              "id": "0x514910771af9ca656af840dff83e8264ecf986ca",
+              "name": "ChainLink Token",
+              "symbol": "LINK"
+            },
+            {
+              "decimals": "18",
+              "id": "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+              "name": "Uniswap",
+              "symbol": "UNI"
+            },
+            {
+              "decimals": "8",
+              "id": "0x2b591e99afe9f32eaa6214f7b7629768c40eeb39",
+              "name": "HEX",
+              "symbol": "HEX"
+            },
+            {
+              "decimals": "18",
+              "id": "0x6982508145454ce325ddbe47a25d4ec3d2311933",
+              "name": "Pepe",
+              "symbol": "PEPE"
+            },
+            {
+              "decimals": "18",
+              "id": "0xf19308f923582a6f7c465e5ce7a9dc1bec6665b1",
+              "name": "TITAN X",
+              "symbol": "TITANX"
+            },
+            {
+              "decimals": "18",
+              "id": "0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce",
+              "name": "SHIBA INU",
+              "symbol": "SHIB"
+            },
+            {
+              "decimals": "18",
+              "id": "0x57e114b691db790c35207b2e685d4a43181e6061",
+              "name": "ENA",
+              "symbol": "ENA"
+            },
+            {
+              "decimals": "18",
+              "id": "0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9",
+              "name": "Aave Token",
+              "symbol": "AAVE"
+            },
+            {
+              "decimals": "6",
+              "id": "0x68749665ff8d2d112fa859aa293f07a622782f38",
+              "name": "Tether Gold",
+              "symbol": "XAUt"
+            },
+            {
+              "decimals": "18",
+              "id": "0x45804880de22913dafe09f4980848ece6ecbaf78",
+              "name": "Paxos Gold",
+              "symbol": "PAXG"
+            },
+            {
+              "decimals": "18",
+              "id": "0x4d224452801aced8b2f0aebe155379bb5d594381",
+              "name": "ApeCoin",
+              "symbol": "APE"
+            },
+            {
+              "decimals": "9",
+              "id": "0x77e06c9eccf2e797fd462a92b6d7642ef85b0a44",
+              "name": "Wrapped TAO",
+              "symbol": "wTAO"
+            },
+            {
+              "decimals": "18",
+              "id": "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
+              "name": "Wrapped liquid staked Ether 2.0",
+              "symbol": "wstETH"
+            },
+            {
+              "decimals": "18",
+              "id": "0x5a98fcbea516cf06857215779fd812ca3bef1b32",
+              "name": "Lido DAO Token",
+              "symbol": "LDO"
+            },
+            {
+              "decimals": "18",
+              "id": "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3",
+              "name": "Ondo",
+              "symbol": "ONDO"
+            }
+          ]
+        }
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"data\": {\n    \"_meta\": {\n      \"block\": {\n        \"hash\": null,\n        \"number\": 25969047\n      },\n      \"deployment\": \"QmTZ8ejXJxRo7vDBS4uwqBeGoxLSWbhaA7oXa1RvxunLy7\",\n      \"hasIndexingErrors\": false\n    },\n    \"tokens\": [\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\",\n        \"name\": \"Wrapped Ether\",\n        \"symbol\": \"WETH\"\n      },\n      {\n        \"decimals\": \"6\",\n        \"id\": \"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\",\n        \"name\": \"USD Coin\",\n        \"symbol\": \"USDC\"\n      },\n      {\n        \"decimals\": \"6\",\n        \"id\": \"0xdac17f958d2ee523a2206206994597c13d831ec7\",\n        \"name\": \"Tether USD\",\n        \"symbol\": \"USDT\"\n      },\n      {\n        \"decimals\": \"8\",\n        \"id\": \"0x2260fac5e5542a773aa44fbcfedf7c193bc2c599\",\n        \"name\": \"Wrapped BTC\",\n        \"symbol\": \"WBTC\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x6b175474e89094c44da98b954eedeac495271d0f\",\n        \"name\": \"Dai Stablecoin\",\n        \"symbol\": \"DAI\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x514910771af9ca656af840dff83e8264ecf986ca\",\n        \"name\": \"ChainLink Token\",\n        \"symbol\": \"LINK\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x1f9840a85d5af5bf1d1762f925bdaddc4201f984\",\n        \"name\": \"Uniswap\",\n        \"symbol\": \"UNI\"\n      },\n      {\n        \"decimals\": \"8\",\n        \"id\": \"0x2b591e99afe9f32eaa6214f7b7629768c40eeb39\",\n        \"name\": \"HEX\",\n        \"symbol\": \"HEX\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x6982508145454ce325ddbe47a25d4ec3d2311933\",\n        \"name\": \"Pepe\",\n        \"symbol\": \"PEPE\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0xf19308f923582a6f7c465e5ce7a9dc1bec6665b1\",\n        \"name\": \"TITAN X\",\n        \"symbol\": \"TITANX\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce\",\n        \"name\": \"SHIBA INU\",\n        \"symbol\": \"SHIB\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x57e114b691db790c35207b2e685d4a43181e6061\",\n        \"name\": \"ENA\",\n        \"symbol\": \"ENA\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9\",\n        \"name\": \"Aave Token\",\n        \"symbol\": \"AAVE\"\n      },\n      {\n        \"decimals\": \"6\",\n        \"id\": \"0x68749665ff8d2d112fa859aa293f07a622782f38\",\n        \"name\": \"Tether Gold\",\n        \"symbol\": \"XAUt\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x45804880de22913dafe09f4980848ece6ecbaf78\",\n        \"name\": \"Paxos Gold\",\n        \"symbol\": \"PAXG\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x4d224452801aced8b2f0aebe155379bb5d594381\",\n        \"name\": \"ApeCoin\",\n        \"symbol\": \"APE\"\n      },\n      {\n        \"decimals\": \"9\",\n        \"id\": \"0x77e06c9eccf2e797fd462a92b6d7642ef85b0a44\",\n        \"name\": \"Wrapped TAO\",\n        \"symbol\": \"wTAO\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0\",\n        \"name\": \"Wrapped liquid staked Ether 2.0\",\n        \"symbol\": \"wstETH\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0x5a98fcbea516cf06857215779fd812ca3bef1b32\",\n        \"name\": \"Lido DAO Token\",\n        \"symbol\": \"LDO\"\n      },\n      {\n        \"decimals\": \"18\",\n        \"id\": \"0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3\",\n        \"name\": \"Ondo\",\n        \"symbol\": \"ONDO\"\n      }\n    ]\n  }\n}"
+        }
+      ],
+      "isError": false,
+      "elapsed_ms": 475,
+      "provenance": {
+        "source": "mcp",
+        "server": {
+          "name": "subgraph-mcp",
+          "url": "https://subgraphs.mcp.thegraph.com/sse",
+          "transport": "sse",
+          "protocol_version": "2024-11-05",
+          "authenticated": false,
+          "server_name": "subgraph-mcp",
+          "server_version": "0.1.1"
+        },
+        "tool": "execute_query_by_subgraph_id",
+        "arguments": {
+          "subgraph_id": "5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV",
+          "query": "{\n  _meta(block: {number: 25969047}) {\n    block {\n      number\n      hash\n    }\n    deployment\n    hasIndexingErrors\n  }\n  tokens(\n    first: 20\n    orderBy: txCount\n    orderDirection: desc\n    block: {number: 25969047}\n  ) {\n    id\n    symbol\n    name\n    decimals\n  }\n}"
+        },
+        "arguments_sha256": "160202fdf689813f0a007ec72d31917e728817d41e9d18bfe2ce5e923763ca75",
+        "fetched_at": 1789309284006
+      }
+    }
+  },
+  "mapping": {
+    "path": "data.tokens",
+    "prompt": "At block {block}, which {chain} address is indexed by Uniswap v3 for {name} ({symbol})?",
+    "answer": "{id}",
+    "alt_prompt": "In the Uniswap v3 snapshot at {chain} block {block}, what is the address for {name} ({symbol})?",
+    "require": [
+      "id",
+      "symbol",
+      "name"
+    ],
+    "constants": {
+      "chain": "Ethereum mainnet",
+      "block": 25969047
+    },
+    "max_rows": 200
+  },
+  "items": 20,
+  "rejected": [],
+  "rows_sha256": "0861a41f9b0f1066e9b6deaf06a665bf6c2ada23fba22c0fbafff61c99f00805"
+}

@@ -1,0 +1,8 @@
+{
+  "valid": true,
+  "rows": 20,
+  "rejected": 0,
+  "block": 25969047,
+  "authenticated": false,
+  "rows_sha256": "0861a41f9b0f1066e9b6deaf06a665bf6c2ada23fba22c0fbafff61c99f00805"
+}

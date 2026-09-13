@@ -27,19 +27,20 @@
  *   GRAPH_API_KEY=…  node dist/examples/subgraph-to-training-set.js \
  *     --keyword uniswap --subgraph 5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV --out /tmp/uniswap.jsonl
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { McpDataSource, McpDataSourceError } from '../datasource.js';
 import { canonicalJsonl, getPath, type RowMapping } from '../rows.js';
+import { assertGraphResult, pinQuery } from './graph-query.js';
 
 const SUBGRAPH_MCP = 'https://subgraphs.mcp.thegraph.com/sse';
 
 /**
- * The default pull: token identities out of a Uniswap subgraph. Every field used here is immutable — a contract
- * address, a symbol, a name, a decimals count. A price or a TVL would change every block, and a fact that changes
- * every block is retrieval, not memory: training it produces a knowledge that is wrong by tomorrow (design §11.3).
+ * The default pull: indexed token identities scoped to a Uniswap snapshot. Names and symbols may change or collide,
+ * so the questions identify the source, chain and block. Prices and TVL are deliberately excluded.
  */
 const DEFAULT_QUERY = `{
-  _meta { block { number } }
+  _meta { block { number hash } deployment hasIndexingErrors }
   tokens(first: %FIRST%, orderBy: txCount, orderDirection: desc) {
     id
     symbol
@@ -50,9 +51,9 @@ const DEFAULT_QUERY = `{
 
 const DEFAULT_MAPPING: RowMapping = {
   path: 'data.tokens',
-  prompt: 'What is the {chain} contract address of the {name} ({symbol}) token?',
+  prompt: 'At block {block}, which {chain} address is indexed by Uniswap v3 for {name} ({symbol})?',
   answer: '{id}',
-  alt_prompt: 'Which address is the {symbol} token deployed at on {chain}?',
+  alt_prompt: 'In the Uniswap v3 snapshot at {chain} block {block}, what is the address for {name} ({symbol})?',
   require: ['id', 'symbol', 'name'],
   constants: { chain: 'Ethereum mainnet' },
   max_rows: 200,
@@ -61,17 +62,19 @@ const DEFAULT_MAPPING: RowMapping = {
 interface Args {
   keyword: string; subgraph: string | null; first: number; out: string | null;
   queryFile: string | null; mappingFile: string | null; upload: boolean; name: string | null;
-  anonymous: boolean; timeoutMs: number;
+  anonymous: boolean; timeoutMs: number; block: number | null;
 }
 
 function parseArgs(argv: string[]): Args {
-  const a: Args = { keyword: 'uniswap', subgraph: null, first: 20, out: null, queryFile: null, mappingFile: null, upload: false, name: null, anonymous: false, timeoutMs: 120_000 };
+  const a: Args = { keyword: 'uniswap', subgraph: null, first: 20, out: null, queryFile: null, mappingFile: null, upload: false, name: null, anonymous: false, timeoutMs: 120_000, block: null };
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i + 1];
+    if (!['--upload', '--anonymous', '--help', '-h'].includes(argv[i]) && (!v || v.startsWith('--'))) throw new Error(`Missing value for ${argv[i]}`);
     switch (argv[i]) {
       case '--keyword': a.keyword = String(v); i++; break;
       case '--subgraph': a.subgraph = String(v); i++; break;
-      case '--first': a.first = Math.max(1, Math.min(200, Number(v))); i++; break;
+      case '--first': a.first = Number(v); i++; break;
+      case '--block': a.block = Number(v); i++; break;
       case '--out': a.out = String(v); i++; break;
       case '--query-file': a.queryFile = String(v); i++; break;
       case '--mapping-file': a.mappingFile = String(v); i++; break;
@@ -80,9 +83,13 @@ function parseArgs(argv: string[]): Args {
       case '--upload': a.upload = true; break;
       case '--anonymous': a.anonymous = true; break;
       case '--help': case '-h': usage(); process.exit(0); break;
-      default: if (argv[i]?.startsWith('--')) { console.error(`unknown option ${argv[i]}`); usage(); process.exit(2); }
+      default: throw new Error(`unknown option ${argv[i]}`);
     }
   }
+  if (!Number.isSafeInteger(a.first) || a.first < 1 || a.first > 200) throw new Error('--first must be an integer from 1 to 200');
+  if (!Number.isSafeInteger(a.timeoutMs) || a.timeoutMs < 1) throw new Error('--timeout-ms must be a positive integer');
+  if (a.block !== null && (!Number.isSafeInteger(a.block) || a.block < 1)) throw new Error('--block must be a positive integer');
+  if (a.subgraph && a.subgraph !== '5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV' && !a.mappingFile) throw new Error('A different subgraph needs --mapping-file with its own chain and fact wording');
   return a;
 }
 
@@ -92,9 +99,10 @@ function usage(): void {
   --keyword <word>       what to search the Subgraph MCP for (default: uniswap)
   --subgraph <id>        the subgraph to query. Required unless the 30-day volume check can rank the candidates.
   --first <n>            page size for the default query (default 20, max 200)
+  --block <n>            reproduce a historical block (default: discover latest, then pin)
   --query-file <path>    your own GraphQL query instead of the built-in one
   --mapping-file <path>  your own row mapping (JSON: {path, prompt, answer, require, constants, …})
-  --out <path>           write the rows as JSONL and the provenance as <path>.provenance.json
+  --out <path>           write JSONL, .provenance.json and full .evidence.json sidecars
   --upload               upload the rows to Ainize as a training set, then STOP (never trains)
   --name <text>          name for the uploaded training set
   --anonymous            connect with no API key (the hosted server allows it; the run is then unattributed)
@@ -105,7 +113,7 @@ Environment: GRAPH_API_KEY (or THEGRAPH_GATEWAY_API_KEY) for The Graph; AINIZE_N
 
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
-  const key = process.env.GRAPH_API_KEY ?? process.env.THEGRAPH_GATEWAY_API_KEY ?? '';
+  const key = args.anonymous ? '' : process.env.GRAPH_API_KEY ?? process.env.THEGRAPH_GATEWAY_API_KEY ?? '';
   if (!key && !args.anonymous) {
     console.error([
       'No Graph API key in the environment, so there is nothing live to read — and this example will not invent rows.',
@@ -129,9 +137,11 @@ async function main(): Promise<number> {
     const { server, tools } = await source.connect();
     console.log(`connected: ${server.server_name ?? server.name} ${server.server_version ?? ''} over ${server.transport} (${server.authenticated ? 'with an API key' : 'anonymous'}), protocol ${server.protocol_version}`);
     console.log(`tools: ${tools.map((t) => t.name).join(', ')}\n`);
+    const instructions = await source.readResource('graphql://subgraph');
 
     // 1) search ------------------------------------------------------------------------------------------------
     const search = await source.call('search_subgraphs_by_keyword', { keyword: args.keyword });
+    if (search.isError) throw new Error(`Subgraph search failed: ${search.text.slice(0, 400)}`);
     const found = (getPath(search.json, 'subgraphs') as { id?: string; metadata?: { displayName?: string }; currentVersion?: { subgraphDeployment?: { ipfsHash?: string } } }[] | undefined) ?? [];
     console.log(`1. search_subgraphs_by_keyword("${args.keyword}") → ${found.length} candidate(s)`);
     if (!found.length) { console.error(`nothing matched "${args.keyword}" — try another keyword.`); return 3; }
@@ -139,7 +149,8 @@ async function main(): Promise<number> {
     // 2) the volume check the server's own instructions call NON-OPTIONAL -------------------------------------
     const hashes = [...new Set(found.map((s) => s.currentVersion?.subgraphDeployment?.ipfsHash).filter((x): x is string => !!x))].slice(0, 30);
     const volume = await source.call('get_deployment_30day_query_counts', { ipfs_hashes: hashes });
-    const counts = ((getPath(volume.json, 'deployments') as { ipfs_hash: string; total_query_count: number }[] | undefined) ?? [])
+    if (volume.isError) throw new Error(`Volume check failed: ${volume.text.slice(0, 400)}`);
+    const counts = [...((getPath(volume.json, 'deployments') as { ipfs_hash: string; total_query_count: number }[] | undefined) ?? [])]
       .sort((a, b) => b.total_query_count - a.total_query_count);
     const nameOf = new Map(found.map((s) => [s.currentVersion?.subgraphDeployment?.ipfsHash ?? '', s.metadata?.displayName ?? '']));
     const idOf = new Map(found.map((s) => [s.currentVersion?.subgraphDeployment?.ipfsHash ?? '', s.id ?? '']));
@@ -160,14 +171,16 @@ async function main(): Promise<number> {
       return 4;
     }
     console.log(`   using subgraph ${subgraphId}${args.subgraph ? ' (named on the command line)' : ' (highest 30-day volume)'}\n`);
+    if (!args.mappingFile && subgraphId !== '5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV') throw new Error('Default mapping is for Uniswap v3 Ethereum; specify --mapping-file for other subgraphs');
 
     // 3) the schema — never guess a field name ----------------------------------------------------------------
     const schema = await source.call('get_schema_by_subgraph_id', { subgraph_id: subgraphId });
+    if (schema.isError) throw new Error(`Schema fetch failed: ${schema.text.slice(0, 400)}`);
     const sdl = schema.text;
     console.log(`3. get_schema_by_subgraph_id → ${sdl.length} bytes of SDL`);
 
     const mapping: RowMapping = args.mappingFile ? (JSON.parse(readFileSync(args.mappingFile, 'utf8')) as RowMapping) : DEFAULT_MAPPING;
-    const query = args.queryFile ? readFileSync(args.queryFile, 'utf8') : DEFAULT_QUERY.replace('%FIRST%', String(args.first));
+    const queryTemplate = args.queryFile ? readFileSync(args.queryFile, 'utf8') : DEFAULT_QUERY.replace('%FIRST%', String(args.first));
     const entity = (mapping.path ?? '').split('.').pop() ?? '';
     const missing = [entity, ...(mapping.require ?? [])].filter((f) => f && !new RegExp(`\\b${f.replace(/[^\w]/g, '')}\\b`).test(sdl));
     if (missing.length) {
@@ -177,15 +190,20 @@ async function main(): Promise<number> {
     console.log(`   schema check: ${[entity, ...(mapping.require ?? [])].join(', ')} all present\n`);
 
     // 4) the query, and the rows -------------------------------------------------------------------------------
-    const probe = await source.call('execute_query_by_subgraph_id', { subgraph_id: subgraphId, query });
-    const block = getPath(probe.json, 'data._meta.block.number');
-    if (block === undefined) console.log('   NOTE: the query returned no `_meta { block { number } }`, so these rows are not pinned to a block.');
+    const probe = await source.call('execute_query_by_subgraph_id', { subgraph_id: subgraphId, query: args.block === null
+      ? '{ _meta { block { number hash } deployment hasIndexingErrors } }'
+      : pinQuery('{ _meta { block { number hash } deployment hasIndexingErrors } }', args.block) });
+    const block = assertGraphResult(probe, args.block ?? undefined);
+    const query = pinQuery(queryTemplate, block);
+    mapping.constants = { ...mapping.constants, block };
     const out = await source.fetchRows({
       tool: 'execute_query_by_subgraph_id',
       arguments: { subgraph_id: subgraphId, query },
       mapping,
       upstream: {
         subgraph_id: subgraphId,
+        deployment: String(getPath(probe.json, 'data._meta.deployment') ?? ''),
+        block_hash: String(getPath(probe.json, 'data._meta.block.hash') ?? ''),
         ...(block !== undefined ? { block: Number(block) } : {}),
         ...(counts[0] ? { thirty_day_queries_top_candidate: counts[0].total_query_count } : {}),
         volume_check: allZero ? 'ran; every candidate reported 0' : 'ran',
@@ -194,17 +212,32 @@ async function main(): Promise<number> {
       // check, the argument hash, every row hash) stays in the provenance JSON, where it is not paying for context.
       note_fields: ['subgraph_id', 'block'],
     });
+    assertGraphResult(out.raw, block);
+    for (const field of ['deployment', 'block.hash']) {
+      const expected = getPath(probe.json, `data._meta.${field}`);
+      const actual = getPath(out.raw.json, `data._meta.${field}`);
+      if (expected && actual && actual !== expected) throw new Error(`Graph ${field} changed between probe and pinned query`);
+    }
+    out.provenance.upstream!.block_hash = getPath(out.raw.json, 'data._meta.block.hash') as string | null ?? null;
+    if (!out.rows.length) throw new Error('Live query produced no usable training rows');
     console.log(`4. execute_query_by_subgraph_id → ${out.items} item(s) → ${out.rows.length} row(s), ${out.rejected.length} rejected, ${out.raw_bytes} bytes`);
     for (const r of out.rejected.slice(0, 5)) console.log(`     rejected #${r.index}: ${r.reason}`);
     console.log('');
     for (const r of out.rows.slice(0, 5)) console.log(`   Q ${r.prompt}\n   A ${r.answer}\n     ${r.note ?? ''}`);
     if (out.rows.length > 5) console.log(`   … ${out.rows.length - 5} more`);
-    console.log(`\nrows_sha256 ${out.provenance.rows_sha256}   (this is the training-set id these bytes will land on)`);
+    console.log(`\nrows_sha256 ${out.provenance.rows_sha256}   (expected dataset content hash; Ainize assigns a separate dataset id)`);
 
     if (args.out) {
+      mkdirSync(dirname(args.out), { recursive: true });
       writeFileSync(args.out, canonicalJsonl(out.rows), 'utf8');
       writeFileSync(`${args.out}.provenance.json`, JSON.stringify(out.provenance, null, 2), 'utf8');
-      console.log(`wrote ${args.out} and ${args.out}.provenance.json`);
+      writeFileSync(`${args.out}.evidence.json`, JSON.stringify({
+        format: 'ainize-graph-evidence-v1', server, tools, instructions,
+        selection: { keyword: args.keyword, subgraph_id: subgraphId, reason: args.subgraph ? 'explicit CLI selection' : 'highest reported 30-day query volume' },
+        calls: { search, volume, schema, probe, query: out.raw },
+        mapping, items: out.items, rejected: out.rejected, rows_sha256: out.provenance.rows_sha256,
+      }, null, 2), 'utf8');
+      console.log(`wrote ${args.out}, ${args.out}.provenance.json and ${args.out}.evidence.json`);
     }
 
     if (args.upload) {
@@ -247,4 +280,4 @@ async function main(): Promise<number> {
   }
 }
 
-process.exitCode = await main();
+process.exitCode = await main().catch((error: Error) => { console.error(error.message); return 2; });

@@ -2,6 +2,7 @@
   "name": "@ainize/mcp",
   "version": "0.1.0",
   "private": true,
+  "engines": { "node": ">=24" },
   "description": "ainize-mcp — Ainize as an MCP server: search knowledge, prove it with a before/after live test, quote and buy it over x402, from Claude Code / Cursor / ChatGPT",
   "type": "module",
   "main": "./dist/index.js",
@@ -33,16 +34,19 @@
     "dev": "tsx src/bin.ts",
     "start": "node dist/bin.js",
     "test": "node --test --import tsx test/*.test.ts",
+    "demo:graph": "bash scripts/demo-graph.sh",
+    "validate:graph": "node scripts/validate-graph-evidence.mjs",
     "prepare": "npm run build"
   },
   "dependencies": {
+    "@ainize/core": "git+https://github.com/ainblockchain/ainize-core.git#fafaa517efc37716cd79b1344b97c7f7cc096e58",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@ainize/core": "github:ainblockchain/ainize-core",
     "express": "^5.2.1",
+    "graphql": "^16.14.2",
     "zod": "^4.5.4"
   },
   "devDependencies": {
-    "@ainize/node": "github:ainblockchain/ainize-node",
+    "@ainize/node": "git+https://github.com/ainblockchain/ainize-node.git#cb761f82f1c95cc861c3d3d54b46612dd7938884",
     "@types/express": "^5.0.6",
     "@types/node": "^24.10.0",
     "tsx": "^4.23.13",

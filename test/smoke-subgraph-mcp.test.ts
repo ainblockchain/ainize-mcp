@@ -11,15 +11,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { McpDataSource } from '../src/datasource.js';
 import { rowsSha256 } from '../src/rows.js';
+import { assertGraphResult, pinQuery } from '../src/examples/graph-query.js';
 
 const KEY = process.env.GRAPH_API_KEY ?? process.env.THEGRAPH_GATEWAY_API_KEY ?? '';
-const SKIP = KEY ? false : 'no GRAPH_API_KEY in the environment (this test never substitutes fixtures for live data)';
+const SKIP = KEY || process.env.GRAPH_SMOKE_ANONYMOUS === '1' ? false : 'set GRAPH_API_KEY or GRAPH_SMOKE_ANONYMOUS=1 for live data';
 /** Uniswap v3 on Ethereum mainnet — the id the Subgraph MCP resolves to that deployment. */
 const SUBGRAPH = '5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV';
 
 const connect = () => new McpDataSource({
   name: 'subgraph-mcp',
-  transport: { kind: 'sse', url: 'https://subgraphs.mcp.thegraph.com/sse', headers: { Authorization: `Bearer ${KEY}` } },
+  transport: { kind: 'sse', url: 'https://subgraphs.mcp.thegraph.com/sse', ...(KEY ? { headers: { Authorization: `Bearer ${KEY}` } } : {}) },
   timeoutMs: 120_000,
   clientName: 'ainize-mcp-smoke',
 });
@@ -30,7 +31,7 @@ test('smoke: the hosted Subgraph MCP answers over SSE and states its own mandato
   const { server, tools } = await s.connect();
   assert.equal(server.server_name, 'subgraph-mcp');
   assert.equal(server.transport, 'sse');
-  assert.equal(server.authenticated, true);
+  assert.equal(server.authenticated, !!KEY);
   for (const name of ['search_subgraphs_by_keyword', 'get_deployment_30day_query_counts', 'get_schema_by_subgraph_id', 'execute_query_by_subgraph_id']) {
     assert.ok(tools.some((x) => x.name === name), `the workflow this integration follows needs ${name}`);
   }
@@ -54,7 +55,9 @@ test('smoke: a live subgraph query becomes block-pinned training rows', { skip: 
   const schema = await s.call('get_schema_by_subgraph_id', { subgraph_id: SUBGRAPH });
   assert.match(schema.text, /type Token\b/, 'the schema is read before a field name is used');
 
-  const query = '{ _meta { block { number } } tokens(first: 5, orderBy: txCount, orderDirection: desc) { id symbol name } }';
+  const probe = await s.call('execute_query_by_subgraph_id', { subgraph_id: SUBGRAPH, query: '{ _meta { block { number } } }' });
+  const block = assertGraphResult(probe);
+  const query = pinQuery('{ _meta { block { number } } tokens(first: 5, orderBy: txCount, orderDirection: desc) { id symbol name } }', block);
   const out = await s.fetchRows({
     tool: 'execute_query_by_subgraph_id',
     arguments: { subgraph_id: SUBGRAPH, query },
@@ -65,7 +68,7 @@ test('smoke: a live subgraph query becomes block-pinned training rows', { skip: 
       require: ['id', 'symbol', 'name'],
       constants: { chain: 'Ethereum mainnet' },
     },
-    upstream: { subgraph_id: SUBGRAPH },
+    upstream: { subgraph_id: SUBGRAPH, block },
     note_fields: ['subgraph_id'],
   });
   assert.equal(out.rows.length, 5);
@@ -75,6 +78,7 @@ test('smoke: a live subgraph query becomes block-pinned training rows', { skip: 
     assert.match(String(row.note), /via MCP subgraph-mcp · execute_query_by_subgraph_id · subgraph_id/);
   }
   assert.equal(out.provenance.rows_sha256, rowsSha256(out.rows), 'the record hashes the rows it travels with');
-  const block = (out.provenance.arguments as { query: string }).query.includes('_meta');
-  assert.ok(block, 'the query pinned the answer to a block');
+  assertGraphResult(out.raw, block);
+  assert.equal(out.provenance.upstream?.block, block);
+  assert.equal(out.provenance.arguments.query, pinQuery(query, block));
 });

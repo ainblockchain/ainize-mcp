@@ -114,6 +114,9 @@ test('fetchRows: rows in the canonical shape, provenance sealed over exactly tho
   assert.equal(out.provenance.arguments.query, '{ tokens { id symbol name } }', 'the query a buyer would re-run is on the record');
   assert.equal(out.provenance.upstream?.block, 25903086);
   assert.equal(out.provenance.server.server_name, 'test-data-server');
+  assert.deepEqual(out.raw.json, TOKENS);
+  assert.equal(out.raw_bytes, Buffer.byteLength(out.raw.text, 'utf8'));
+  assert.equal(out.raw.provenance.arguments_sha256, out.provenance.arguments_sha256);
 });
 
 test('an upstream tool error is an error here, never an empty training set', async (t) => {
