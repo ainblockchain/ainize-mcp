@@ -33,7 +33,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/bin.ts",
     "start": "node dist/bin.js",
-    "test": "node --test --import tsx test/*.test.ts",
+    "test": "npm run build && node --test --import tsx test/*.test.ts",
     "demo:graph": "bash scripts/demo-graph.sh",
     "validate:graph": "node scripts/validate-graph-evidence.mjs",
     "prepare": "npm run build"

@@ -85,7 +85,7 @@ export function loadConfig(opts: LoadOptions = {}): McpConfig {
   };
 
   const nodeUrl = (pick('AINIZE_NODE_URL', 'node_url') ?? 'http://localhost:3422').replace(/\/+$/, '');
-  if (!/^https?:\/\//.test(nodeUrl)) throw new Error(`AINIZE_NODE_URL must be an http(s) URL, got ${JSON.stringify(nodeUrl)}`);
+  if (!/^https?:\/\//.test(nodeUrl)) throw new Error('AINIZE_NODE_URL must be an http(s) URL');
 
   const teachRaw = pick('AINIZE_TEACH_KEY', 'teach_key') ?? pick('AINIZE_TEACH_KEY_FILE', 'teach_key_file');
   const session = normalizeAmount(pick('AINIZE_MCP_SESSION_BUDGET', 'session_budget') ?? '0', 'AINIZE_MCP_SESSION_BUDGET');
