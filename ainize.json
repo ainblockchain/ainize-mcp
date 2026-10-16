@@ -1,0 +1,11 @@
+{
+  "name": "ainize-mcp",
+  "kind": "service",
+  "build": { "dockerfile": "Dockerfile", "context": ".", "secrets": ["GITHUB_READ_TOKEN"] },
+  "port": 3499,
+  "healthcheck": { "path": "/healthz", "status": [200], "timeoutSeconds": 120 },
+  "config": { "AINIZE_NODE_URL": "ainize.node.url" },
+  "env": { "AINIZE_MCP_SESSION_BUDGET": "0", "AINIZE_MCP_MAX_TEACH_JOBS": "0" },
+  "allowedHosts": ["ainize.ai", "www.ainize.ai"],
+  "resources": { "memory": "512m", "cpus": 1 }
+}

@@ -942,3 +942,24 @@ local-ledger cluster**, never at the demo cluster or the shared AIN chain.
   `ainize://knowledge/{id}` resource template — the tools and `ainize://instructions` carry the same guidance today.
 - **A bundle buy.** `quote` states the whole stack and its honest total; `buy` purchases the named child only and
   says so before the money moves, because `?bundle=1` does not exist on the node.
+
+## Deploy through Ainize
+
+The root `ainize.json` defines a Docker HTTP service on port 3499 with `/healthz` and the MCP endpoint `/mcp`.
+Configure `ainize.node.url` in the project's private configuration store. The manifest contains no operational
+backend address. Its public-host declaration supports the Ainize public domains; a different backend requires an
+explicit, reviewed egress policy on the deployment node.
+
+The pinned development dependency on `ainize-node` is private. Store a restricted GitHub repository-read credential
+as the project's `GITHUB_READ_TOKEN` build secret. The Dockerfile uses a transient BuildKit mount and a GitHub-only
+credential helper for locked installation. Never supply the token through `build.args`, an environment file in Git,
+a URL, or a copied personal SSH/admin key. Build-only secrets are not runtime `secrets`.
+
+The final image runs as the Node user and contains the compiled MCP server and production dependencies. `/healthz`
+reports liveness and a commit marker written at build time; it does not claim that the configured backend is ready.
+Runtime environment variables cannot replace that marker. Normal `npm test` builds first so its compiled HTTP/MCP
+smoke test exercises the current bundle against a synthetic node, without spending, training or publishing.
+
+Deployment requires the Ainize node build-secret/configuration implementation in
+[ainize-node PR #215](https://github.com/ainblockchain/ainize-node/pull/215). This contract and local protocol tests
+are not proof of a production deployment, private dependency access on a peer, or all backend user flows.

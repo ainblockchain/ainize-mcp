@@ -11,6 +11,7 @@
  * reverting to browser version" on stdout, which is enough to make a client fail to parse the handshake).
  */
 import { randomUUID } from 'node:crypto';
+import { healthHandler } from './health.js';
 
 interface Args { http: number | null; host: string; config?: string; onlyUser: boolean; help: boolean; version: boolean }
 
@@ -89,9 +90,9 @@ async function main(): Promise<void> {
 
   // Capabilities come from the node's own answers. A node that is down is not a startup failure: the server still
   // serves its read tools and every call reports `node_unreachable` honestly.
-  await ctx.resolveCapabilities().catch((e: Error) => { process.stderr.write(`[ainize-mcp] could not reach ${cfg.nodeUrl}: ${e.message}\n`); });
+  await ctx.resolveCapabilities().catch(() => { process.stderr.write('[ainize-mcp] could not reach the configured node\n'); });
   const caps = ctx.capabilities();
-  process.stderr.write(`[ainize-mcp] node ${cfg.nodeUrl} · capabilities ${Object.entries(caps).filter(([, v]) => v).map(([k]) => k.replace('can_', '')).join(', ') || 'none'} · budget ${ctx.budget.view().cap}\n`);
+  process.stderr.write(`[ainize-mcp] configured node · capabilities ${Object.entries(caps).filter(([, v]) => v).map(([k]) => k.replace('can_', '')).join(', ') || 'none'} · budget ${ctx.budget.view().cap}\n`);
 
   if (args.http === null) {
     const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
@@ -116,6 +117,7 @@ async function main(): Promise<void> {
   const { createMcpExpressApp } = await import('@modelcontextprotocol/sdk/server/express.js');
   const express = (await import('express')).default;
   const app = createMcpExpressApp({ host: args.host });
+  app.get('/healthz', healthHandler(SERVER_VERSION));
   app.use(express.json({ limit: '4mb' }));
   const sessions = new Map<string, InstanceType<typeof StreamableHTTPServerTransport>>();
 
