@@ -46,7 +46,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
-    "@ainize/node": "git+https://github.com/ainblockchain/ainize-node.git#cb761f82f1c95cc861c3d3d54b46612dd7938884",
+    "@ainize/node": "^0.4.2",
     "@types/express": "^5.0.6",
     "@types/node": "^24.10.0",
     "tsx": "^4.23.13",
